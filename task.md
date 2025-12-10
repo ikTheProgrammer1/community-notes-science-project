@@ -1,0 +1,60 @@
+# Defense Dashboard Task List
+
+- [x] Update `docs/misinformation_dashboard_strategy.md` to reflect the "Defense Dashboard" (Target-based) approach.
+- [x] Refine Data Strategy
+    - [x] `notes-00000.tsv`: Map `tweetId` -> `noteId` & `classification`.
+    - [x] `noteStatusHistory-00000.tsv`: Map `noteId` -> `currentStatus` (to verify "HELPFUL" status).
+- [x] Update `dashboard.py` implementation
+    - [x] Change API logic: Use Search Endpoint (`to:handle` OR `@handle`) instead of User Timeline.
+    - [x] Implement `get_mentions` function.
+    - [x] Load and join logic for `notes` + `status_history`.
+    - [x] "Repeat Offender" Analysis logic (Group by Attacker ID).
+    - [x] Visualization: "Top Attackers" Table/Chart.
+    - [x] Visualization: "Tactics" (Tag verification).
+- [x] Implement Narrative Clustering
+    - [x] Update dependencies (scikit-learn)
+    - [x] Implement TF-IDF and KMeans logic
+    - [x] Update UI to display Narrative Themes
+    - [x] Refine Logic (Stop Words, Cleaning)
+- [x] Implement Controversy Monitor Upgrade (Crisis Radar)
+    - [x] **Conflict Velocity**: Calculate ratings/hour ratio.
+    - [x] **Wedge Clustering**: Apply `cluster_narratives` to controversial notes.
+    - [x] **Stalemate Analysis**: Aggregate rating reasons.
+    - [ ] **Refine**: Switch Velocity to Ratings/Day for readability.
+- [x] Implement Astroturf Meter (Coordination Analysis)
+    - [x] **Data Fetching**: Include `noteAuthorParticipantId` in SQL queries.
+    - [x] **Logic**: Calculate 'Top 1% Ratio' and 'Repeat Offenders'.
+    - [x] **Visualization**: 'Heavy Hitter' distribution chart.
+    - [x] **UI**: Add Coordination section to Intelligence Report.
+- [x] Implement Crisis Response Heatmap (When Analysis)
+    - [x] **Data Logic**: Extract Day of Week and Hour from `createdAtMillis`.
+    - [x] **Visualization**: Create 2D Heatmap (Altair/Pivot).
+    - [x] **UI**: Add 'Crisis Response Windows' section.
+- [x] Implement Narrative Life-Cycle (Time-Series)
+    - [x] **Logic**: Group clustered notes by Date (Week/Month).
+    - [x] **Visualization**: Stacked Area Chart (Streamgraph).
+    - [x] **UI**: Add chart to Narrative Themes section.
+- [x] Implement Winning Formula (Success Driver Analysis)
+    - [x] **Data Fetching**: Query HELPFUL vs NOT_HELPFUL notes (Balanced Set).
+    - [x] **Feature Extraction**: Length, Sentiment, Source Type.
+    - [x] **Analysis**: Compare Win Rates across features.
+    - [x] **UI**: Scorecard / "Best Practices" visualization.
+- [x] Implement Semantic Precedent Search (Hall of Fame)
+    - [x] **Data Fetching**: Search HELPFUL notes -> Get IDs -> Count 'HELPFUL' ratings.
+    - [x] **Logic**: Rank by helpful count.
+    - [x] **UI**: Display "Precedent Cards" (Top 3-5 notes) with Context and Score.
+    - [x] **Refinement**: Deduplicate similar notes (>80% similarity).
+    - [x] **Refinement**: Deduplicate similar notes (>80% similarity).
+    - [x] **Refinement**: Add clickable Tweet links and clean text URLs.
+    - [x] **Final Polish**: Language Filter (English Only).
+    - [x] **Final Polish**: Label Clarity (Consensus Rating + Gold/Silver).
+    - [x] **Final Polish**: Label Clarity (Consensus Rating + Gold/Silver).
+    - [x] **Final Polish**: Source Highlighting (Primary Source labels).
+    - [x] **Visual Hierarchy**: Unbox Hall of Fame results (remove expanders, use green containers).
+    - [ ] **Refinement**: Add "Net Count" definition to score header.
+- [x] Verify functionality with `run.sh`.
+- [/] UV & Testing
+    - [x] Update Strategy for UV.
+    - [x] Create Unit Tests (`tests/test_dashboard_debug.py`).
+    - [x] Update `run.sh` to use `uv`.
+    - [x] Run Verification Tests.

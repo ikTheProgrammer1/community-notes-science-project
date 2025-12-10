@@ -1,0 +1,29 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual envs
+.venv/
+env/
+venv/
+
+# Streamlit
+streamlit
+
+# Test
+pytest
+
+# OS / editor
+.DS_Store
+
+# Jupyter junk
+.ipynb_checkpoints/
+
+# Data & generated outputs
+data/
+output/
+docs/

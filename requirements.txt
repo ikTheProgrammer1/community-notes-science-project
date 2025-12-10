@@ -1,0 +1,6 @@
+streamlit
+pandas
+duckdb
+pytest
+scikit-learn
+textblob
