@@ -3,6 +3,16 @@
 ## Goal Description
 Add a Time-Series Analysis ("Narrative Life-Cycle") to the dashboard to visualize the momentum of narrative themes over time. This helps identify if a threat is growing, stable, or fading.
 
+### Phase 3: Data Integrity Pipeline (Pipeline Split)
+- **Goal**: Resolve metric fluctuations ("Hallucinations") caused by random sampling.
+- **Metric Engine**:
+  - Remove `LIMIT` from all DuckDB queries (`search_notes_by_keyword`, `search_controversial_notes`).
+  - Calculate stats on 100% of matching rows.
+- **Visual Engine**:
+  - Implement `deterministic_sample(df, n=5000)` using `random_state=42`.
+  - Use this sampled subset ONLY for rendering heavy charts (e.g. Scatterplots).
+- **Verification**: Run "Elon Musk" search 3x, verify identical metrics.
+
 ## Proposed Changes
 
 ### Dashboard Logic
@@ -71,3 +81,27 @@ Provide "Best in Class" examples to inspire users by finding the highest-rated h
 - Search for a topic with sufficient history (e.g., "Covid", "Ukraine", or general terms like "The").
 - Verify the "Narrative Life-Cycle" chart appears under the Narrative Themes section.
 - Check that the x-axis is time and y-axis is volume, stacked by theme.
+
+### Phase 5: Smart Context & Conversational Workflow
+- **Goal**: "Tab-Aware" context injection and seamless "Prime & Chat" flow.
+- **Architecture Change**: Replace `st.tabs` with `st.radio` (Nav Bar) to track `active_view` server-side.
+- **Context Payloads**:
+  - `Intelligence Report`: Top 10 Search Results + Summary stats.
+  - `Controversy Monitor`: Narrative Clusters (Top 5 themes, growth).
+  - `Winning Formula`: Success Stats (Win Rates by length, sentiment).
+- **Workflow**: 
+  - Sidebar checks `active_view`.
+  - "Analyze" button loads specific JSON payload into `st.session_state['webllm_context']`.
+  - AI is "Primed" with this data but Chat Input remains open for questions.
+
+### Phase 6: Explicit Context Workflow
+- **Goal**: Manual, Explicit Control. One Context at a time.
+- **Helper Function**: `inject_context(data, primer_text)`
+  - Updates `ai_active_context` and `ai_system_primer`.
+  - Triggers sidebar focus.
+- **Integration Points**:
+  - `Astroturf Meter`: "Analyze Coordination" (Gini/Author stats).
+  - `Crisis Heatmap`: "Analyze Timing" (Hour/Day tables).
+  - `Narrative Themes`: "Analyze Narratives" (Cluster summaries).
+  - `Evidence Locker`: "Analyze Raw Logs" (Top 10 notes).
+- **JS Update**: Receive `system_primer` to customize initial AI prompt (e.g. "You are looking for bots...").

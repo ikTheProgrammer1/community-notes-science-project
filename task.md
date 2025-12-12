@@ -11,6 +11,26 @@
     - [x] "Repeat Offender" Analysis logic (Group by Attacker ID).
     - [x] Visualization: "Top Attackers" Table/Chart.
     - [x] Visualization: "Tactics" (Tag verification).
+- [ ] Phase 3: Data Integrity Pipeline [[Proposed]]
+    - [ ] Refactor `search_notes_by_keyword` (Metric Engine - Full Data)
+    - [ ] Refactor `search_controversial_notes` (Metric Engine - Full Data)
+    - [ ] Implement Deterministic Sampling (Visual Engine - Seed 42)
+    - [x] System Verify: Fluctuation Check
+- [ ] Phase 4: Persistent State Architecture
+    - [ ] Persist Main View (Keyword & Results in session_state)
+    - [ ] Persist AI Component (Unconditional Mounting)
+    - [x] Fix Context Injection (Avoid Reload Loops)
+- [ ] Phase 5: Smart Context & Conversational Workflow
+    - [ ] Implement Tab-Aware Logic (Track Active Tab)
+    - [ ] internal: Create Specific Payloads (Clusters, Win/Loss, Raw Search)
+    - [ ] Refactor "Prime & Chat" JS Workflow
+- [ ] Phase 6: Explicit Context Workflow
+    - [ ] Implement Helper `inject_context(data, prompt)`
+    - [ ] Add Button: Astroturf Meter ("Analyze Coordination")
+    - [ ] Add Button: Crisis Heatmap ("Analyze Timing")
+    - [ ] Add Button: Narrative Themes ("Analyze Narratives")
+    - [ ] Add Button: Evidence Locker ("Analyze Raw Logs")
+    - [ ] Update JS to handle dynamic system priming
 - [x] Implement Narrative Clustering
     - [x] Update dependencies (scikit-learn)
     - [x] Implement TF-IDF and KMeans logic
@@ -25,7 +45,15 @@
     - [x] **Data Fetching**: Include `noteAuthorParticipantId` in SQL queries.
     - [x] **Logic**: Calculate 'Top 1% Ratio' and 'Repeat Offenders'.
     - [x] **Visualization**: 'Heavy Hitter' distribution chart.
-    - [x] **UI**: Add Coordination section to Intelligence Report.
+    - [x] **Fix**: Address Hallucination/System Prompt (Forensic Analyst Persona) <!-- id: 12 -->
+    - [x] **Fix**: Implement Stateful Conversation History (JS Array Persistence) <!-- id: 13 -->
+    - [ ] **Phase 2: Private Intelligence Assistant (Local LLM)** <!-- id: 5 -->
+    - [ ] **Clean Up**: Remove legacy `gpu_lab.py` visual experiment. <!-- id: 6 -->
+    - [ ] **Core Module**: Create `private_intel.py` scaffold. <!-- id: 7 -->
+    - [ ] **WebLLM Integration**: Implement `st.components.v1.html` bridge with `@mlc-ai/web-llm`. <!-- id: 8 -->
+    - [ ] **Model Loading**: Configure Llama-3.2-3B-Instruct loading pipeline. <!-- id: 9 -->
+    - [ ] **Data Bridge**: Serialize Dashboard Context (Clusters/Notes) to LLM Prompt. <!-- id: 10 -->
+    - [ ] **Verification**: Verify local inference and summarization capabilities. <!-- id: 11 -->
 - [x] Implement Crisis Response Heatmap (When Analysis)
     - [x] **Data Logic**: Extract Day of Week and Hour from `createdAtMillis`.
     - [x] **Visualization**: Create 2D Heatmap (Altair/Pivot).

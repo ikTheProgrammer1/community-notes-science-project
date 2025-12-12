@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import duckdb
 import os
+import json
 from urllib.parse import urlparse
 
 # ... (Configuration and CSS remain similar, updating Title)
@@ -19,16 +20,181 @@ STATUS_DB_PATH = "data/noteStatusHistory-00000.tsv"
 RATINGS_DB_PATH = "data/ratings-*.tsv"
 
 # --- Helper Functions ---
+
+def deterministic_sample(df, n=5000, seed=42):
+    """
+    Visual Engine: Downsample data for rendering performance while keeping it frozen.
+    """
+    if df is None or df.empty:
+        return df
+    if len(df) <= n:
+        return df
+    return df.sample(n=n, random_state=seed)
+
+# --- Data Engine (DuckDB) ---
+
+# --- In-Line Insight Generator (WebLLM) ---
+import streamlit.components.v1 as components
+
+def render_inline_insight(context_data, element_id):
+    """
+    Renders a self-contained WebLLM component for In-Line Insight Generation.
+    Default: 'Generate Strategic Insight' Button.
+    Active: Streams AI Summary properly formatted.
+    """
+    
+    # Serialize context
+    context_json = json.dumps(context_data)
+    
+    # 3-Layer System Prompt (Hardcoded)
+    system_prompt = "You are a Forensic Intelligence Analyst for the 'VIP Intelligence Platform'. Data Source: You are analyzing 'Community Notes' (user-generated fact-checks) on X/Twitter. Definitions: 'Clusters' are groups of misinformation narratives. 'Volume' indicates the threat level (High Volume = High Danger)."
+    task_instruction = "Write a 3-bullet executive summary explaining the specific threat revealed in this data. Be brief, strategic, and direct. Do not mention JSON."
+    
+    # HTML/JS Template
+    html_code = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{ font-family: 'Source Sans Pro', sans-serif; background: transparent; color: #e0e0e0; margin: 0; padding: 0; }}
+            
+            #container {{
+                border: 1px solid #333;
+                background: #0e1117;
+                border-radius: 8px;
+                padding: 15px;
+                min-height: 60px;
+                transition: all 0.3s ease;
+            }}
+            
+            #generate-btn {{
+                width: 100%;
+                padding: 10px;
+                background: linear-gradient(90deg, #FF4B4B 0%, #FF9056 100%);
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-weight: 600;
+                cursor: pointer;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+                font-size: 13px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+            }}
+            
+            #generate-btn:hover {{ opacity: 0.9; }}
+            #generate-btn:disabled {{ background: #444; cursor: not-allowed; }}
+            
+            #insight-content {{
+                display: none;
+                font-size: 14px;
+                line-height: 1.5;
+            }}
+            
+            #insight-content ul {{ padding-left: 20px; margin: 0; }}
+            #insight-content li {{ margin-bottom: 8px; }}
+            
+            .spinner {{
+                border: 3px solid rgba(255,255,255,0.3);
+                border-radius: 50%;
+                border-top: 3px solid #fff;
+                width: 16px;
+                height: 16px;
+                animation: spin 1s linear infinite;
+            }}
+            
+            @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
+            
+        </style>
+        <script type="module">
+            import {{ CreateMLCEngine }} from "https://esm.run/@mlc-ai/web-llm";
+
+            const SELECTED_MODEL = "Llama-3.2-3B-Instruct-q4f32_1-MLC";
+            let engine = null;
+            
+            const btn = document.getElementById("generate-btn");
+            const content = document.getElementById("insight-content");
+            const container = document.getElementById("container");
+            
+            const contextPayload = {context_json};
+            const systemPrompt = "{system_prompt}";
+            const taskInstruction = "{task_instruction}";
+            
+            btn.onclick = async () => {{
+                btn.disabled = true;
+                btn.innerHTML = '<div class="spinner"></div> Analyze Secure Channel...';
+                
+                try {{
+                    // 1. Initialize Engine (Cached)
+                    if (!engine) {{
+                        engine = await CreateMLCEngine(SELECTED_MODEL, {{
+                            initProgressCallback: (report) => {{
+                                // Optional: Show progress text if needed
+                                console.log(report.text);
+                            }}
+                        }});
+                    }}
+                    
+                    // 2. Prepare Prompt
+                    const messages = [
+                        {{ role: "system", content: systemPrompt }},
+                        {{ role: "user", content: "Current Data: " + JSON.stringify(contextPayload) + "\\n\\n" + taskInstruction }}
+                    ];
+                    
+                    // 3. UI Transition
+                    btn.style.display = 'none';
+                    content.style.display = 'block';
+                    content.innerHTML = "<i>Analyzing intelligence stream...</i>";
+                    
+                    // 4. Stream Response
+                    const chunks = await engine.chat.completions.create({{
+                        messages: messages,
+                        stream: true
+                    }});
+
+                    let fullText = "";
+                    content.innerHTML = ""; // Clear loader
+                    
+                    for await (const chunk of chunks) {{
+                        const delta = chunk.choices[0]?.delta?.content || "";
+                        fullText += delta;
+                        // Basic Markdown Parsing for Bullets
+                        content.innerHTML = fullText.replace(/\\n/g, '<br>').replace(/- /g, '• ');
+                    }}
+                    
+                }} catch (err) {{
+                    content.innerHTML = "<span style='color: #ff4b4b'>Encryption Error: " + err.message + "</span>";
+                    btn.style.display = 'block';
+                    btn.disabled = false;
+                    btn.innerHTML = "⚠️ Retry Connection";
+                }}
+            }};
+        </script>
+    </head>
+    <body>
+        <div id="container">
+            <button id="generate-btn">✨ Generate Strategic Insight</button>
+            <div id="insight-content"></div>
+        </div>
+    </body>
+    </html>
+    """
+    
+    # Render Component (Height adjusts based on content roughly, but fixed for now)
+    components.html(html_code, height=250, scrolling=True)
+
+# ----------------------------
+
 def extract_domain(url_list_str):
     """Extract domains from a comma-separated string of URLs."""
     if not url_list_str or pd.isna(url_list_str):
         return []
     
     domains = []
-    # URLs in TSV might be separated by comma or space, usually standard text
-    # Assuming the column contains raw text URLs.
-    # Simple regex or split might be needed if multiple URLs are packed.
-    # For now, let's assume space or comma delimitation.
     import re
     urls = re.findall(r'(https?://\S+)', str(url_list_str))
     
@@ -39,7 +205,6 @@ def extract_domain(url_list_str):
             domains.append(domain)
     return domains
 
-# --- Data Engine (DuckDB) ---
 def search_notes_by_keyword(keyword):
     """
     Search for HELPFUL notes and retrieve columns needed for strategic analysis.
@@ -70,7 +235,7 @@ def search_notes_by_keyword(keyword):
     WHERE n.summary ILIKE '%{keyword}%'
       AND s.currentStatus = 'CURRENTLY_RATED_HELPFUL'
       AND n.classification = 'MISINFORMED_OR_POTENTIALLY_MISLEADING'
-    LIMIT 1000
+    ORDER BY n.createdAtMillis DESC
     """
     
     try:
@@ -106,7 +271,7 @@ def search_controversial_notes(keyword):
     JOIN '{STATUS_DB_PATH}' AS s ON n.noteId = s.noteId
     WHERE n.summary ILIKE '%{keyword}%'
       AND s.currentStatus = 'NEEDS_MORE_RATINGS'
-    LIMIT 200
+    ORDER BY n.createdAtMillis DESC
     """
     
     try:
@@ -189,8 +354,11 @@ def cluster_narratives(df, keyword=None, n_clusters=5):
     Cluster notes into narrative themes using TF-IDF + KMeans.
     Returns: list of dicts [{'theme': 'keyword, keyword', 'count': 10, 'notes': df_subset}]
     """
+    # Visual Engine: Sample first for performance & stability (Clustering is heavy)
+    df_sampled = deterministic_sample(df, n=3000, seed=42)
+    
     # Clean text: fillna and apply cleaning
-    texts = df['summary'].fillna('').apply(clean_text)
+    texts = df_sampled['summary'].fillna('').apply(clean_text)
     
     if len(texts) < 50:
         return None  # Too few to cluster meaningfuly
@@ -247,14 +415,14 @@ def cluster_narratives(df, keyword=None, n_clusters=5):
     terms = vectorizer.get_feature_names_out()
     
     clusters = []
-    df['cluster'] = kmeans.labels_
+    df_sampled['cluster'] = kmeans.labels_
     
     for i in range(true_k):
         # dynamic label: top 3 keywords
         top_terms = [terms[ind] for ind in order_centroids[i, :3]]
         theme_name = ", ".join(top_terms)
         
-        cluster_notes = df[df['cluster'] == i]
+        cluster_notes = df_sampled[df_sampled['cluster'] == i]
         
         clusters.append({
             'id': i,
@@ -339,7 +507,7 @@ def fetch_comparative_data(keyword):
     JOIN '{STATUS_DB_PATH}' AS s ON n.noteId = s.noteId
     WHERE n.summary ILIKE '%{keyword}%'
       AND s.currentStatus IN ('CURRENTLY_RATED_HELPFUL', 'CURRENTLY_RATED_NOT_HELPFUL')
-    LIMIT 1000
+    ORDER BY n.createdAtMillis DESC
     """
     try:
         con = duckdb.connect(database=':memory:')
@@ -442,6 +610,7 @@ def fetch_hall_of_fame(keyword):
     JOIN '{STATUS_DB_PATH}' AS s ON n.noteId = s.noteId
     WHERE n.summary ILIKE '%{keyword}%'
       AND s.currentStatus = 'CURRENTLY_RATED_HELPFUL'
+    ORDER BY n.createdAtMillis DESC
     LIMIT 150
     """
     
@@ -658,11 +827,22 @@ def run_intelligence_report(keyword):
         # --- Visualization Layout ---
         st.markdown("---")
         
-        # Row 1: Key Metrics
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Confirmed Threats", len(results))
-        m2.metric("Avg Defense Lag", f"{avg_lag:.1f} Hours", help="Average time for the community to successfully rate a note as Helpful.")
-        m3.metric("Top Defender", source_counts.index[0] if not source_counts.empty else "N/A")
+        st.markdown("---")
+        
+        # Save context for Private Intelligence Assistant
+        # st.session_state['current_view_data'] = results.head(10).to_dict(orient='records') <-- REMOVED (Implicit)
+
+
+        # Calculate additional metrics for display
+        top_vector = max(signature_data, key=signature_data.get) if signature_data else "Unknown"
+        unique_sources_count = len(source_counts)
+
+        # Row 1: High Level Metrics
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Confirmed Threats", len(results))
+        col2.metric("Avg Defense Speed", f"{results['lag_hours'].mean():.1f}h")
+        col3.metric("Top Attack Vector", top_vector)
+        col4.metric("Arsenal Size", f"{unique_sources_count} Sources")
         
         st.markdown("---")
         
@@ -687,23 +867,23 @@ def run_intelligence_report(keyword):
         st.subheader("🤖 Astroturf Meter (Coordination Analysis)")
         st.caption("Detecting artificial amplification by analyzing author concentration.")
         
-        astro_data = calculate_coordination(results)
+        coord_data = calculate_coordination(results)
         
-        if astro_data:
+        if coord_data:
             am1, am2, am3 = st.columns(3)
             # Top 1% Share
-            share_pct = astro_data['top_1_percent_share'] * 100
+            share_pct = coord_data['top_1_percent_share'] * 100
             am1.metric("Top 1% Control", f"{share_pct:.1f}%", help="Percentage of notes written by the top 1% of authors. >20% suggests coordination.")
             
             # Repeat Offenders
-            am2.metric("Repeat Offenders", astro_data['repeat_offenders'], help="Number of authors who wrote more than 1 note on this topic.")
+            am2.metric("Repeat Offenders", coord_data['repeat_offenders'], help="Number of authors who wrote more than 1 note on this topic.")
             
             # Total Authors
-            am3.metric("Total Authors", astro_data['total_authors'])
+            am3.metric("Total Authors", coord_data['total_authors'])
             
             # Chart
             st.caption("Concentration of Force (Author Distribution)")
-            st.bar_chart(astro_data['chart_data'], x='Author Rank', y='Notes Written', use_container_width=True)
+            st.bar_chart(coord_data['chart_data'], x='Author Rank', y='Notes Written', use_container_width=True)
         else:
             st.info("Not enough data for coordination analysis.")
 
@@ -715,6 +895,13 @@ def run_intelligence_report(keyword):
         heatmap_chart = generate_crisis_heatmap(results)
         if heatmap_chart:
             st.altair_chart(heatmap_chart, use_container_width=True)
+        if heatmap_chart:
+            st.altair_chart(heatmap_chart, use_container_width=True)
+            # In-Line Insight
+            render_inline_insight(
+                heatmap_chart.to_dict(), 
+                element_id="crisis-heatmap-insight"
+            )
         else:
             st.info("No timing data available.")
 
@@ -730,6 +917,21 @@ def run_intelligence_report(keyword):
             lifecycle_chart = generate_narrative_lifecycle(themes)
             if lifecycle_chart:
                 st.altair_chart(lifecycle_chart, use_container_width=True)
+                
+            # In-Line Insight
+            # Prepare serializable context (DataFrame is not JSON serializable)
+            insight_context = []
+            for t in themes[:5]:
+                insight_context.append({
+                    'theme': t['theme'],
+                    'count': t['count'],
+                    'top_notes': t['notes']['summary'].head(5).tolist()
+                })
+            
+            render_inline_insight(
+                insight_context, 
+                element_id="narrative-insight"
+            )
             
             for cluster in themes:
                 with st.expander(f"Theme: {cluster['theme']} ({cluster['count']} notes)"):
@@ -750,6 +952,15 @@ def run_intelligence_report(keyword):
                 links = extract_domain(row['trustworthySources'])
                 if links:
                     st.write(f"**Sources:** {', '.join(links)}")
+        
+        # In-Line Insight for Raw Feed
+        render_inline_insight(
+             results.head(5).to_dict(orient='records'),
+             element_id="evidence-insight"
+        )
+        
+        # st.session_state['current_view_data'] = results.head(10).to_dict(orient='records') <-- REMOVED
+
 
 
 def run_controversy_monitor(keyword):
@@ -802,6 +1013,25 @@ def run_controversy_monitor(keyword):
         # Reuse robust clustering logic
         themes = cluster_narratives(df, keyword=keyword)
         
+        # Smart Context: Export themes to sidebar
+        if themes:
+            # Serialize themes for context (just top 5 themes and their top notes)
+            export_themes = []
+            for t in themes[:5]:
+                export_themes.append({
+                    "theme": t['theme'],
+                    "volume": t['count'],
+                    "top_notes": t['notes'].head(3)['summary'].tolist()
+                })
+            
+            # Explicit Button for Themes
+            if st.button("🧠 Analyze Narratives (Clusters)"):
+                inject_context(export_themes, primer_text="You are a narrative analyst. Identify the core wedge issues and rumor clusters from this data.")
+            
+            # st.session_state['current_view_data'] = export_themes <-- REMOVED (Implicit)
+
+    
+        
         if themes:
             for cluster in themes:
                 with st.expander(f"Theme: {cluster['theme']} (Intensity: {int(cluster['notes']['rating_count'].sum())} votes)"):
@@ -845,6 +1075,13 @@ def run_winning_formula(keyword):
             
         baseline = analysis['baseline'] * 100
         drivers = analysis['data']
+        
+        if st.button("🧠 Analyze Success Formula"):
+             inject_context(drivers.head(10).to_dict(orient='records'), primer_text="You are a content strategist. Analyze these 'Winning' and 'Losing' attributes. Give actionable advice on how to write better notes.")
+        
+        # st.session_state['current_view_data'] = drivers.head(10).to_dict(orient='records') <-- REMOVED
+
+
         
         # --- Metrics ---
         col1, col2 = st.columns(2)
@@ -977,12 +1214,58 @@ def main():
             
             with tab_intel:
                 run_intelligence_report(keyword)
-                
-            with tab_contro:
-                run_controversy_monitor(keyword)
-                
-            with tab_coach:
-                run_winning_formula(keyword)
+def main():
+    st.title("🛡️ VIP Intelligence Platform")
+    st.markdown("### Strategic Analysis of Misinformation Campaigns")
 
+    # Initialize Session State
+    if 'active_keyword' not in st.session_state:
+        st.session_state['active_keyword'] = None
+    if 'webllm_context' not in st.session_state:
+        st.session_state['webllm_context'] = "{}"
+
+    # Main Input (Search)
+    with st.form(key='search_form'):
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            keyword_input = st.text_input("Intelligence Target (e.g. 'Elon Musk', 'Tesla')", placeholder="Enter keyword to analyze...")
+        with col2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            submit_button = st.form_submit_button(label="Generate Report", type="primary", use_container_width=True)
+
+    # 1. Handle Form Submission
+    if submit_button and keyword_input:
+        st.session_state['active_keyword'] = keyword_input
+        # Reset context on new search to avoid stale data
+        st.session_state['webllm_context'] = "{}" 
+        st.rerun()
+
+    # 2. Render Main Dashboard (Persistent)
+    if st.session_state['active_keyword']:
+        keyword = st.session_state['active_keyword']
+        
+        # Smart Navigation (Stateful)
+        if 'active_view' not in st.session_state:
+            st.session_state['active_view'] = "📊 Intelligence Report"
+            
+        view = st.radio(
+            "Navigation", 
+            ["📊 Intelligence Report", "🔥 Controversy Monitor", "🏆 The Winning Formula"],
+            horizontal=True,
+            key='active_view',
+            label_visibility="collapsed"
+        )
+        st.markdown("---")
+        
+        # Router Logic
+        if view == "📊 Intelligence Report":
+            run_intelligence_report(keyword)
+        elif view == "🔥 Controversy Monitor":
+            run_controversy_monitor(keyword)
+        elif view == "🏆 The Winning Formula":
+            run_winning_formula(keyword)
+
+    # --- END OF DASHBOARD ---
+    
 if __name__ == "__main__":
     main()
