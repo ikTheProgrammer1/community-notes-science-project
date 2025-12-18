@@ -25,7 +25,7 @@ The **VIP Intelligence Platform** is a military-grade analytical suite designed 
 | **Data Engine** | **DuckDB** | In-memory OLAP SQL analysis of massive `.tsv` datasets. |
 | **Frontend** | **Streamlit** | Rapid "War Room" dashboard for real-time monitoring. |
 | **Visualization** | **Altair / PyDeck** | Interactive charts and geospatial rendering. |
-| **AI Agents** | **LangChain / xAI SDK** | Multi-agent orchestration for forensic reporting. |
+| **AI Agents** | **Custom Universal Adapter / xAI SDK** | Multi-agent orchestration for forensic reporting. |
 
 ---
 
