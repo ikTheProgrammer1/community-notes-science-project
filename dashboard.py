@@ -295,8 +295,8 @@ def render_inline_insight(context_data, element_id, prompt_context=""):
     </html>
     """
     
-    # Render Component - Compact height for button, allows expansion for content
-    components.html(html_code, height=55, scrolling=True)
+    # Render Component - Increased height to accommodate the expanded memo content
+    components.html(html_code, height=350, scrolling=True)
 
 # ----------------------------
 
