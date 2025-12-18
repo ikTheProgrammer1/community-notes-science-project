@@ -40,12 +40,15 @@ The **Community Notes Analytics** is a military-grade analytical suite designed 
 
 ## ⚡ Quick Start
 
+### Prerequisite: Install `uv`
 ```bash
-# 1. Install Dependencies
-pip install -r requirements.txt
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
-# 2. Run the War Room
-streamlit run dashboard.py
+### Start the Platform
+```bash
+# This automatically handles dependencies via uv
+bash run.sh
 ```
 
 *Status: Active Development // Clearance Level: TOP SECRET*
