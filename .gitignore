@@ -35,3 +35,7 @@ all_code_and_data.md
 
 # Exclude Raw API Reference (Clutter)
 docs/x-api-*.md
+# Agent Artifacts
+task.md
+walkthrough.md
+implementation_plan.md
