@@ -1,7 +1,7 @@
-# 🛡️ VIP Intelligence Platform
+# 🛡️ Community Notes Analytics
 > **Advanced Forensics & Counter-Misinformation System for Community Notes**
 
-The **VIP Intelligence Platform** is a military-grade analytical suite designed to protect high-profile individuals from coordinated misinformation campaigns ("Astroturfing") on the X platform. By leveraging the open **Community Notes** dataset, it reconstructs truth through forensic data analysis and hybrid AI agents.
+The **Community Notes Analytics** is a military-grade analytical suite designed to protect high-profile individuals from coordinated misinformation campaigns ("Astroturfing") on the X platform. By leveraging the open **Community Notes** dataset, it reconstructs truth through forensic data analysis and hybrid AI agents.
 
 ---
 
