@@ -295,7 +295,7 @@ def render_inline_insight(context_data, element_id, prompt_context=""):
     </html>
     """
     
-    # Render Component - Increased height to accommodate the expanded memo content
+    # Render WebGPU Component - Increased height to 350px for better readability
     components.html(html_code, height=350, scrolling=True)
 
 # ----------------------------
