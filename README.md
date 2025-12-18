@@ -32,7 +32,9 @@ The **VIP Intelligence Platform** is a military-grade analytical suite designed 
 ## 📚 Documentation
 
 *   [**Strategic Architecture**](docs/misinformation_dashboard_strategy.md): Deep dive into the "Privacy-First, Cloud-Augmented" design.
--  [**Dataset Overview**](docs/dataset_overview.md): Understanding the structure of Community Notes data.
+*   [**Counter-Strategy Doctrine**](docs/misinformation-counter-strategy.md): The operational playbook for neutralizing threats.
+*   [**Dataset Overview**](docs/dataset_overview.md): Understanding the structure of Community Notes data.
+*   [**Analysis Guide**](docs/community_notes_analysis_guide.md): Recipes for extracting patterns from the raw data.
 
 ---
 
