@@ -130,10 +130,3 @@ docs/                    # dataset + architecture docs
 
 ---
 
-## License
-
-MIT
-
-## Contact
-
-Nicolas Matta
