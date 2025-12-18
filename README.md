@@ -54,4 +54,4 @@ uv sync
 bash run.sh
 ```
 
-*Status: Active Development // Clearance Level: TOP SECRET*
+*Status: Active Development*
