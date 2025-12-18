@@ -14,7 +14,7 @@ A visual guide to understanding what's inside the TSV files.
 | 1783182562279494134 | C784F04F26E124F4D6EC01658D8F5565005D3092741FB3A6CED3F45089066236 |     1713978827435 | 1783154445682979015 | MISINFORMED_OR_POTENTIALLY_MISLEADING |          nan |       nan |                    nan |                 0 |                        0 |                            0 |                               0 |                                   1 |                                 0 |                  0 |                    0 |                               0 |                                        0 |                            0 |                              0 |                    1 | TikTok only mentions “ban” and chooses to ignore the the divestment portion of the bill     https://www.reuters.com/world/us/senators-hope-tiktok-will-remain-business-us-under-new-owner-2024-04-23/                                                                                                                        |             0 |
 
 ### Data Distribution
-![Notes Chart](../output/notes_overview.png)
+![Notes Chart](./images/notes_overview.png)
 
 ---
 
@@ -30,7 +30,7 @@ A visual guide to understanding what's inside the TSV files.
 | 1354586938863443971 | C0AF45F4C4B2240E7AB31456957E5D770FF7AFA13627C78D64250ED8F00DF730 |     1611793667892 |                                  nan |                 nan |                    1721920068424 | NEEDS_MORE_RATINGS |                                   nan |                      nan |                 1674003109873 | NEEDS_MORE_RATINGS |                          nan | NEEDS_MORE_RATINGS  | NEEDS_MORE_RATINGS       | NEEDS_MORE_RATINGS   | CoreModel (v1.1)   |                      6 |                                        -1 |                                         nan |                       nan |                         nan |                              29389078 |                                              nan |
 
 ### Data Distribution
-![Status History Chart](../output/status_history_overview.png)
+![Status History Chart](./images/status_history_overview.png)
 
 ---
 
@@ -46,7 +46,7 @@ A visual guide to understanding what's inside the TSV files.
 | 1694456013326344456 | 78B383AA66981F722CB82AACB24CF853937CAC0F680DDB590A65082CFEF93B8F |     1692973079447 |         2 |       0 |          0 |         0 |            0 | HELPFUL            |              0 |                    0 |              1 |                   0 |                    1 |                      0 |                       1 |                         1 |                         1 |                 0 |                     0 |                                      0 |                                    0 |                            0 |                    0 |                            0 |                                 0 |                    0 |                                 0 |                             0 |                              0 |                         0 | 1694399607122583796 | DEFAULT                |
 
 ### Data Distribution
-![Ratings Chart](../output/ratings_overview.png)
+![Ratings Chart](./images/ratings_overview.png)
 
 ---
 
