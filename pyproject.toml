@@ -4,4 +4,11 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "duckdb>=1.4.3",
+    "pandas>=2.3.3",
+    "pytest>=9.0.2",
+    "scikit-learn>=1.8.0",
+    "streamlit>=1.52.2",
+    "textblob>=0.19.0",
+]

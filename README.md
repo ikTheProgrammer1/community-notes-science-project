@@ -47,7 +47,10 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ### Start the Platform
 ```bash
-# This automatically handles dependencies via uv
+# 1. Install Dependencies
+uv sync
+
+# 2. Run the War Room
 bash run.sh
 ```
 
