@@ -1,7 +1,7 @@
-# Misinformation Counter-Strategy: The "VIP Intelligence" Doctrine
+# Misinformation Counter-Strategy: The "Community Notes Analytics" Doctrine
 
 ## Executive Summary
-This document outlines the operational strategy for the **VIP Intelligence Platform**. The goal is to proactively identify, analyze, and neutralize misinformation campaigns targeting high-profile reputations using a "Privacy-First" architecture.
+This document outlines the operational strategy for the **Community Notes Analytics**. The goal is to proactively identify, analyze, and neutralize misinformation campaigns targeting high-profile reputations using a "Privacy-First" architecture.
 
 ## System Architecture
 

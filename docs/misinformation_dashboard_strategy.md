@@ -1,7 +1,7 @@
-# VIP Intelligence Platform: Strategic Architecture
+# Community Notes Analytics: Strategic Architecture
 
 ## 1. Executive Vision
-The **VIP Intelligence Platform** is a specialized forensic system designed to protect high-profile individuals (VIPs) from coordinated misinformation campaigns. unlike standard monitoring tools, this platform proactively analyzes **Community Notes** data to detect "Astroturfing" (coordinated inauthentic behavior), visualize narrative attacks, and deploy AI-driven counter-intelligence agents.
+The **Community Notes Analytics** is a specialized forensic system designed to protect high-profile individuals (VIPs) from coordinated misinformation campaigns. unlike standard monitoring tools, this platform proactively analyzes **Community Notes** data to detect "Astroturfing" (coordinated inauthentic behavior), visualize narrative attacks, and deploy AI-driven counter-intelligence agents.
 
 ## 2. Hybrid AI Architecture
 
