@@ -7,8 +7,8 @@ from urllib.parse import urlparse
 
 # ... (Configuration and CSS remain similar, updating Title)
 st.set_page_config(
-    page_title="VIP Intelligence Platform",
-    page_icon="🛡️",
+    page_title="Community Notes Analytics",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -35,20 +35,41 @@ def deterministic_sample(df, n=5000, seed=42):
 
 # --- In-Line Insight Generator (WebLLM) ---
 import streamlit.components.v1 as components
+from cloud_intel import UniversalCloudAdapter, get_investigator_system_prompt
 
-def render_inline_insight(context_data, element_id):
+def render_inline_insight(context_data, element_id, prompt_context=""):
     """
     Renders a self-contained WebLLM component for In-Line Insight Generation.
     Default: 'Generate Strategic Insight' Button.
     Active: Streams AI Summary properly formatted.
+    Features: JSON Datetime Serialization, Strategic Memo UI.
     """
     
-    # Serialize context
-    context_json = json.dumps(context_data)
+    # Serialize context with Datetime and Numpy handling
+    import numpy as np
+    def json_serial(obj):
+        """JSON serializer for objects not serializable by default json code"""
+        if isinstance(obj, (pd.Timestamp, pd.Timedelta)):
+            return str(obj)
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if hasattr(obj, 'isoformat'):
+            return obj.isoformat()
+        raise TypeError (f"Type {type(obj)} not serializable")
+
+    context_json = json.dumps(context_data, default=json_serial)
     
-    # 3-Layer System Prompt (Hardcoded)
-    system_prompt = "You are a Forensic Intelligence Analyst for the 'VIP Intelligence Platform'. Data Source: You are analyzing 'Community Notes' (user-generated fact-checks) on X/Twitter. Definitions: 'Clusters' are groups of misinformation narratives. 'Volume' indicates the threat level (High Volume = High Danger)."
-    task_instruction = "Write a 3-bullet executive summary explaining the specific threat revealed in this data. Be brief, strategic, and direct. Do not mention JSON."
+    # 3-Layer System Prompt (Hardcoded + Dynamic Context)
+    base_system_prompt = "You are a data analyst for the Community Notes Analytics platform. Data Source: 'Community Notes' (user-generated fact-checks) on X/Twitter. Definitions: 'Clusters' are groups of misinformation narratives. 'Volume' indicates the threat level."
+    
+    if prompt_context:
+        full_system_prompt = f"{base_system_prompt} \n\nSPECIFIC TASK CONTEXT: {prompt_context}"
+    else:
+        full_system_prompt = base_system_prompt
+
+    task_instruction = "Write a 3-bullet executive summary explaining the strategic implications of this data. Use a professional, direct tone. Format as a 'Strategic Briefing'. Do not mention JSON."
     
     # HTML/JS Template
     html_code = f"""
@@ -57,54 +78,128 @@ def render_inline_insight(context_data, element_id):
     <head>
         <meta charset="UTF-8">
         <style>
-            body {{ font-family: 'Source Sans Pro', sans-serif; background: transparent; color: #e0e0e0; margin: 0; padding: 0; }}
-            
-            #container {{
-                border: 1px solid #333;
-                background: #0e1117;
-                border-radius: 8px;
-                padding: 15px;
-                min-height: 60px;
-                transition: all 0.3s ease;
+            @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600;700&display=swap');
+
+            body {{ 
+                font-family: 'Inter', sans-serif; 
+                background: transparent; 
+                color: #e0e0e0; 
+                margin: 0; 
+                padding: 0;
+                min-height: auto;
+                height: auto;
             }}
             
+            /* Button Wrapper for Alignment */
+            .button-container {{
+                display: flex;
+                justify-content: flex-end;
+                padding: 10px 0 5px 0;
+                margin: 0;
+                min-height: 45px;
+            }}
+
+            /* Tool-like Button State */
             #generate-btn {{
-                width: 100%;
-                padding: 10px;
-                background: linear-gradient(90deg, #FF4B4B 0%, #FF9056 100%);
-                color: white;
-                border: none;
+                width: auto;
+                min-width: 140px;
+                padding: 8px 16px;
+                background: transparent;
+                color: #FF4B4B;
+                border: 1px solid #FF4B4B;
                 border-radius: 4px;
-                font-weight: 600;
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 11px;
+                font-weight: 700;
                 cursor: pointer;
                 text-transform: uppercase;
                 letter-spacing: 1px;
-                font-size: 13px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 gap: 8px;
+                transition: all 0.2s ease;
+                margin: 0;
             }}
             
-            #generate-btn:hover {{ opacity: 0.9; }}
-            #generate-btn:disabled {{ background: #444; cursor: not-allowed; }}
+            #generate-btn:hover {{ 
+                background: rgba(255, 75, 75, 0.1);
+                box-shadow: 0 0 15px rgba(255, 75, 75, 0.2);
+                transform: translateY(-1px);
+            }}
+            
+            #generate-btn:disabled {{ 
+                border-color: #444;
+                color: #666;
+                cursor: not-allowed; 
+                transform: none;
+                box-shadow: none;
+            }}
+            
+            /* Classified Memo Container */
+            #container {{
+                display: none; 
+                border-left: 4px solid #FF4B4B; /* Red Accent */
+                background: #1E1E1E; /* Professional Dark Slate */
+                border-radius: 0 4px 4px 0;
+                padding: 15px;
+                margin-top: 10px;
+                margin-bottom: 0;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+                animation: slideDown 0.4s ease-out;
+            }}
+
+            @keyframes slideDown {{
+                from {{ opacity: 0; transform: translateY(-10px); }}
+                to {{ opacity: 1; transform: translateY(0); }}
+            }}
+
+            .memo-header {{
+                display: flex;
+                align-items: center;
+                margin-bottom: 15px;
+                border-bottom: 1px solid #333;
+                padding-bottom: 10px;
+            }}
+
+            .memo-icon {{
+                font-size: 24px;
+                margin-right: 12px;
+            }}
+
+            .memo-title {{
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 12px;
+                color: #888;
+                text-transform: uppercase;
+                letter-spacing: 1.5px;
+            }}
             
             #insight-content {{
-                display: none;
-                font-size: 14px;
-                line-height: 1.5;
+                font-size: 15px;
+                line-height: 1.6;
+                color: #ddd;
             }}
             
-            #insight-content ul {{ padding-left: 20px; margin: 0; }}
+            /* Markdown Styling */
+            #insight-content ul {{ padding-left: 20px; margin: 10px 0; }}
             #insight-content li {{ margin-bottom: 8px; }}
-            
+            #insight-content strong {{ color: #FF9056; font-weight: 700; }}
+            #insight-content blockquote {{ 
+                border-left: 3px solid #FF9056;
+                margin: 10px 0;
+                padding-left: 15px;
+                color: #aaa;
+                font-style: italic;
+            }}
+
             .spinner {{
-                border: 3px solid rgba(255,255,255,0.3);
+                border: 2px solid rgba(255,255,255,0.1);
                 border-radius: 50%;
-                border-top: 3px solid #fff;
-                width: 16px;
-                height: 16px;
-                animation: spin 1s linear infinite;
+                border-top: 2px solid #fff;
+                width: 14px;
+                height: 14px;
+                animation: spin 0.8s linear infinite;
             }}
             
             @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
@@ -120,20 +215,21 @@ def render_inline_insight(context_data, element_id):
             const content = document.getElementById("insight-content");
             const container = document.getElementById("container");
             
+            // Handle potentially large payloads or special chars by encoding
             const contextPayload = {context_json};
-            const systemPrompt = "{system_prompt}";
+            const systemPrompt = `{full_system_prompt}`;
             const taskInstruction = "{task_instruction}";
             
             btn.onclick = async () => {{
+                // Transitions
                 btn.disabled = true;
-                btn.innerHTML = '<div class="spinner"></div> Analyze Secure Channel...';
+                btn.innerHTML = '<div class="spinner"></div> ESTABLISHING SECURE CONNECTION...';
                 
                 try {{
                     // 1. Initialize Engine (Cached)
                     if (!engine) {{
                         engine = await CreateMLCEngine(SELECTED_MODEL, {{
                             initProgressCallback: (report) => {{
-                                // Optional: Show progress text if needed
                                 console.log(report.text);
                             }}
                         }});
@@ -142,13 +238,13 @@ def render_inline_insight(context_data, element_id):
                     // 2. Prepare Prompt
                     const messages = [
                         {{ role: "system", content: systemPrompt }},
-                        {{ role: "user", content: "Current Data: " + JSON.stringify(contextPayload) + "\\n\\n" + taskInstruction }}
+                        {{ role: "user", content: "MISSION DATA: " + JSON.stringify(contextPayload) + "\\n\\nINSTRUCTION: " + taskInstruction }}
                     ];
                     
-                    // 3. UI Transition
+                    // 3. UI Switch to Memo Mode
                     btn.style.display = 'none';
-                    content.style.display = 'block';
-                    content.innerHTML = "<i>Analyzing intelligence stream...</i>";
+                    container.style.display = 'block';
+                    content.innerHTML = "<div style='display:flex; align-items:center; gap:10px; color:#666;'><div class='spinner'></div><i>Analyzing Intelligence Stream...</i></div>";
                     
                     // 4. Stream Response
                     const chunks = await engine.chat.completions.create({{
@@ -157,35 +253,50 @@ def render_inline_insight(context_data, element_id):
                     }});
 
                     let fullText = "";
-                    content.innerHTML = ""; // Clear loader
+                    content.innerHTML = ""; 
                     
                     for await (const chunk of chunks) {{
                         const delta = chunk.choices[0]?.delta?.content || "";
                         fullText += delta;
-                        // Basic Markdown Parsing for Bullets
-                        content.innerHTML = fullText.replace(/\\n/g, '<br>').replace(/- /g, '• ');
+                        
+                        // Simple Markdown Parser for the Stream
+                        let formatted = fullText
+                            .replace(/\\n/g, '<br>')
+                            .replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>')
+                            .replace(/> (.*)/g, '<blockquote>$1</blockquote>')
+                            .replace(/- /g, '• ');
+                            
+                        content.innerHTML = formatted;
                     }}
                     
                 }} catch (err) {{
-                    content.innerHTML = "<span style='color: #ff4b4b'>Encryption Error: " + err.message + "</span>";
-                    btn.style.display = 'block';
+                    container.style.display = 'none';
+                    btn.style.display = 'flex';
                     btn.disabled = false;
-                    btn.innerHTML = "⚠️ Retry Connection";
+                    btn.innerHTML = "⚠️ CONNECTION FAILED - RETRY";
+                    alert("Error: " + err.message);
                 }}
             }};
         </script>
     </head>
     <body>
+        <div class="button-container">
+            <button id="generate-btn">✨ GENERATE STRATEGIC INSIGHT</button>
+        </div>
+        
         <div id="container">
-            <button id="generate-btn">✨ Generate Strategic Insight</button>
+            <div class="memo-header">
+                <span class="memo-icon">🛡️</span>
+                <span class="memo-title">AI INTELLIGENCE ASSESSMENT // CLASSIFIED</span>
+            </div>
             <div id="insight-content"></div>
         </div>
     </body>
     </html>
     """
     
-    # Render Component (Height adjusts based on content roughly, but fixed for now)
-    components.html(html_code, height=250, scrolling=True)
+    # Render Component - Compact height for button, allows expansion for content
+    components.html(html_code, height=55, scrolling=True)
 
 # ----------------------------
 
@@ -825,10 +936,6 @@ def run_intelligence_report(keyword):
         sig_df = pd.DataFrame.from_dict(signature_data, orient='index', columns=['Count'])
         
         # --- Visualization Layout ---
-        st.markdown("---")
-        
-        st.markdown("---")
-        
         # Save context for Private Intelligence Assistant
         # st.session_state['current_view_data'] = results.head(10).to_dict(orient='records') <-- REMOVED (Implicit)
 
@@ -844,8 +951,6 @@ def run_intelligence_report(keyword):
         col3.metric("Top Attack Vector", top_vector)
         col4.metric("Arsenal Size", f"{unique_sources_count} Sources")
         
-        st.markdown("---")
-        
         # Row 2: Charts (Signatures + Sources)
         c1, c2 = st.columns(2)
         
@@ -853,12 +958,22 @@ def run_intelligence_report(keyword):
             st.subheader("⚠️ Attack Signature")
             st.caption("Breakdown of misinformation tactics used against the target.")
             st.bar_chart(sig_df, use_container_width=True)
+            render_inline_insight(
+                signature_data,
+                element_id="attack-sig-insight",
+                prompt_context=f"Analyze the misinformation tactics. Explain why '{top_vector}' is the dominant vector."
+            )
             
         with c2:
             st.subheader("🛡️ Arsenal of Truth")
             st.caption("Sources most frequently cited in successful defenses.")
             if not source_counts.empty:
                 st.dataframe(source_counts, use_container_width=True, column_config={"value": st.column_config.ProgressColumn("Citations")})
+                render_inline_insight(
+                    source_counts.to_dict(),
+                    element_id="arsenal-insight",
+                    prompt_context="Analyze the defensive sources. Which websites are winning the argument?"
+                )
             else:
                 st.info("No sources cited in these notes.")
 
@@ -884,6 +999,14 @@ def run_intelligence_report(keyword):
             # Chart
             st.caption("Concentration of Force (Author Distribution)")
             st.bar_chart(coord_data['chart_data'], x='Author Rank', y='Notes Written', use_container_width=True)
+            
+            # Prepare lightweight payload (exclude chart df)
+            astro_payload = {k:v for k,v in coord_data.items() if k != 'chart_data'}
+            render_inline_insight(
+                astro_payload,
+                element_id="astroturf-insight",
+                prompt_context="Analyze the bot coordination levels. Is this organic or artificial?"
+            )
         else:
             st.info("Not enough data for coordination analysis.")
 
@@ -900,7 +1023,8 @@ def run_intelligence_report(keyword):
             # In-Line Insight
             render_inline_insight(
                 heatmap_chart.to_dict(), 
-                element_id="crisis-heatmap-insight"
+                element_id="crisis-heatmap-insight",
+                prompt_context="Analyze the attack timing. When should the client be most alert?"
             )
         else:
             st.info("No timing data available.")
@@ -930,7 +1054,8 @@ def run_intelligence_report(keyword):
             
             render_inline_insight(
                 insight_context, 
-                element_id="narrative-insight"
+                element_id="narrative-insight",
+                prompt_context="Identify the core wedge issues and rumor clusters from this data."
             )
             
             for cluster in themes:
@@ -956,7 +1081,8 @@ def run_intelligence_report(keyword):
         # In-Line Insight for Raw Feed
         render_inline_insight(
              results.head(5).to_dict(orient='records'),
-             element_id="evidence-insight"
+             element_id="evidence-insight",
+             prompt_context="Summarize the specific claims made in these raw logs."
         )
         
         # st.session_state['current_view_data'] = results.head(10).to_dict(orient='records') <-- REMOVED
@@ -1004,6 +1130,11 @@ def run_controversy_monitor(keyword):
                 "Missing Sources": df['count_missing_sources'].sum()
             }
             st.bar_chart(pd.Series(reasons), horizontal=True, use_container_width=True)
+            render_inline_insight(
+                reasons,
+                element_id="stalemate-insight",
+                prompt_context="Analyze the rejection reasons. What psychological barriers are preventing consensus?"
+            )
 
         # --- Wedge Narrative Clusters ---
         st.markdown("---")
@@ -1024,11 +1155,12 @@ def run_controversy_monitor(keyword):
                     "top_notes": t['notes'].head(3)['summary'].tolist()
                 })
             
-            # Explicit Button for Themes
-            if st.button("🧠 Analyze Narratives (Clusters)"):
-                inject_context(export_themes, primer_text="You are a narrative analyst. Identify the core wedge issues and rumor clusters from this data.")
-            
-            # st.session_state['current_view_data'] = export_themes <-- REMOVED (Implicit)
+            # Explicit Button for Themes (REPLACED)
+            render_inline_insight(
+                export_themes,
+                element_id="wedge-insight",
+                prompt_context="Identify the core wedge issues and rumor clusters from this data."
+            )
 
     
         
@@ -1076,10 +1208,15 @@ def run_winning_formula(keyword):
         baseline = analysis['baseline'] * 100
         drivers = analysis['data']
         
-        if st.button("🧠 Analyze Success Formula"):
-             inject_context(drivers.head(10).to_dict(orient='records'), primer_text="You are a content strategist. Analyze these 'Winning' and 'Losing' attributes. Give actionable advice on how to write better notes.")
+        # st.session_state['current_view_data'] = drivers.head(10).to_dict(orient='records') <-- REMOVED
         
         # st.session_state['current_view_data'] = drivers.head(10).to_dict(orient='records') <-- REMOVED
+        
+        render_inline_insight(
+            drivers.head(10).to_dict(orient='records'),
+            element_id="success-insight",
+            prompt_context="Analyze these success drivers. What specific writing techniques are leading to 'Helpful' ratings?"
+        )
 
 
         
@@ -1120,6 +1257,12 @@ def run_winning_formula(keyword):
         st.markdown("---")
         st.subheader("🏛️ Hall of Fame (Semantic Precedents)")
         st.caption("Top-Rated Notes for Inspiration")
+        
+        render_inline_insight(
+            fetch_hall_of_fame(keyword).head(3).to_dict(orient='records'),
+             element_id="hof-insight",
+             prompt_context="Analyze these top-rated notes. Use them to create a 'Style Guide' for effective counter-misinformation."
+        )
         
         hof_df = fetch_hall_of_fame(keyword)
         if not hof_df.empty:
@@ -1191,33 +1334,226 @@ def run_winning_formula(keyword):
             st.info("No Hall of Fame data available (could not retrieve rating counts for top notes).")
 
 
+
+def run_investigator_tab(keyword):
+    """
+    Cloud-Only "Power User" tab for deep forensic analysis.
+    Gated by API Key (xAI, OpenAI, Anthropic).
+    """
+    st.header(f"🕵️ Investigator Mode: {keyword}")
+    
+    # --- 1. GATEKEEPER (Lock Screen) ---
+    if 'cloud_api_key' not in st.session_state or not st.session_state['cloud_api_key']:
+        st.warning("⚠️ CLOUD UPLINK REQUIRED")
+        
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.image("https://cdn-icons-png.flaticon.com/512/3064/3064197.png", width=120)  # Generic Lock Icon
+        with col2:
+            st.markdown("""
+            ### RESTRICTED AREA
+            Deep Forensic Analysis requires **cloud neural processing**.
+            Select a Provider and Model authorized for this security clearance.
+            """)
+            
+            # --- MODEL SELECTOR ---
+            
+            # 1. Provider Selection
+            provider = st.selectbox("Select Provider", list(UniversalCloudAdapter.PROVIDERS.keys()))
+            
+            # 2. Model Selection (Dynamic)
+            model_options = UniversalCloudAdapter.MODEL_OPTIONS[provider]
+            model_labels = list(model_options.keys())
+            
+            # Default Selection Logic
+            default_index = 0
+            if provider == "xAI":
+                # Default to Fast (Standard) - Index 1 based on dict order text above
+                # Dictionary order is preserved in Python 3.7+
+                # "Grok 4.1 Fast (Reasoning)", "Grok 4.1 Fast (Standard)", ...
+                try:
+                    default_index = model_labels.index("Grok 4.1 Fast (Standard)")
+                except ValueError:
+                    default_index = 0
+            elif provider == "OpenAI":
+                # Default to GPT-5.2
+                try:
+                    default_index = model_labels.index("GPT-5.2 (Flagship)")
+                except ValueError:
+                    default_index = 0
+            
+            selected_model_label = st.selectbox("Select Model", model_labels, index=default_index)
+            selected_model_id = model_options[selected_model_label]
+            
+            # Input API Key
+            api_key = st.text_input("API Key", type="password", placeholder="sk-...")
+            
+            if st.button("🔓 AUTHORIZE UPLINK", type="primary"):
+                if len(api_key) > 5: # Basic check
+                    st.session_state['cloud_api_key'] = api_key
+                    st.session_state['cloud_provider'] = provider
+                    st.session_state['cloud_model_id'] = selected_model_id
+                    st.rerun()
+                else:
+                    st.error("Invalid API Key length.")
+        return # Stop rendering
+
+    # --- 2. INVESTIGATOR INTERFACE (Unlocked) ---
+    
+    # Utility Bar
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        # Show specific model
+        st.success(f"✅ UPLINK ESTABLISHED: {st.session_state['cloud_provider']} // {st.session_state.get('cloud_model_id', 'Unknown Model')}")
+    with c2:
+        if st.button("🔒 DISCONNECT"):
+            st.session_state['cloud_api_key'] = None
+            st.rerun()
+            
+    # Input Area
+    st.markdown("---")
+    query = st.text_area("Forensic Query", height=100, 
+                        placeholder="e.g., 'Trace the evolution of the narrative regarding the CEO's resignation. Identify the first instance of the 'fraud' claim.'")
+    
+    if st.button("⚡ EXECUTE FORENSIC ANALYSIS", type="primary"):
+        if not query:
+            st.warning("Please enter a query.")
+            return
+
+        # Fetch Context (Reusing logic from run_intelligence_report roughly)
+        # For now, we fetch ALL notes for the keyword to give max context
+        notes_df = search_notes_by_keyword(keyword)
+        
+        # Filter by keyword
+        filtered_notes = notes_df[
+            notes_df['summary'].str.contains(keyword, case=False, na=False) |
+            notes_df['tweetId'].astype(str).str.contains(keyword, case=False, na=False)
+        ]
+        
+        # Limit payload to prevent token overflow (though cloud models handle 128k+)
+        # Let's verify we have data
+        if filtered_notes.empty:
+            st.error("No intelligence data found for this target.")
+            return
+
+        # Serialize Data
+        # We take top 50 citations ?? Or just top 50 by date?
+        # Let's take top 50 most recent for narrative evolution
+        context_payload = filtered_notes.sort_values('createdAtMillis', ascending=False).head(50).to_dict(orient='records')
+        
+        # Stream Output
+        client = UniversalCloudAdapter(st.session_state['cloud_provider'], st.session_state['cloud_api_key'])
+        
+        st.markdown("### 📝 Forensic Report")
+        
+        # Static Status Indicator (Disappears when stream starts if possible, but stream writes are diff)
+        # Better pattern: Use status for the content preparation, then write stream
+        with st.status("🕵️ Analyzing Intelligence...", expanded=True) as status:
+            st.write("Initializing Neural Uplink...")
+            st.write("Compiling Context Data...")
+            
+            try:
+                # Stream generator
+                stream = client.generate_forensic_report(
+                    get_investigator_system_prompt(),
+                    context_payload,
+                    query,
+                    model_id=st.session_state['cloud_model_id']
+                )
+                
+                # We need to render the stream outside the status to make it permanent?
+                # Actually, user wants status to disappear or update.
+                # Let's just finish the status then stream below.
+                status.update(label="Analysis Complete", state="complete", expanded=False)
+            except Exception as e:
+                st.error(f"Initialization Failed: {e}")
+                return
+
+        st.write_stream(stream)
+            
+        # No outer except needed as we handle it inside
+
+
+
 # --- Main App ---
 def main():
-    st.title("🛡️ VIP Intelligence Platform")
-    st.markdown("### Strategic Analysis of Misinformation Campaigns")
+    st.title("Community Notes Analytics")
+    st.markdown("### Historical data analysis and insights from X Community Notes")
+    
+    # Custom CSS for button styling and header removal
+    st.markdown("""
+    <style>
+        /* Override primary button color */
+        button[kind="primaryFormSubmit"],
+        button[data-testid="stBaseButton-primaryFormSubmit"] {
+            background-color: #1DA1F2 !important;
+            border-color: #1DA1F2 !important;
+            color: white !important;
+        }
+        button[kind="primaryFormSubmit"]:hover,
+        button[data-testid="stBaseButton-primaryFormSubmit"]:hover {
+            background-color: #1a8cd8 !important;
+            border-color: #1a8cd8 !important;
+        }
+        
+        /* Hide Streamlit header/toolbar */
+        header[data-testid="stHeader"],
+        .stAppHeader,
+        .stAppToolbar,
+        [data-testid="stToolbar"] {
+            display: none !important;
+            visibility: hidden !important;
+        }
+        #MainMenu, footer {
+            visibility: hidden !important;
+        }
+        
+        /* --- ALIGNMENT FIX (CSS ONLY) --- */
+        
+        /* --- ALIGNMENT FIX (CSS ONLY) --- */
+        
+        /* 1. Force Horizontal Block to stretch columns */
+        [data-testid="stHorizontalBlock"] {
+            align-items: stretch !important;
+            height: auto !important;
+            min-height: 100% !important; 
+        }
 
-    # Main Input (Search)
-    with st.form(key='search_form'):
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            keyword = st.text_input("Intelligence Target (e.g. 'Elon Musk', 'Tesla')", placeholder="Enter keyword to analyze...")
-        with col2:
-            st.markdown("<br>", unsafe_allow_html=True)
-            submit_button = st.form_submit_button(label="Generate Report", type="primary", use_container_width=True)
+        /* 2. Force Columns to be Flex Containers and take full height */
+        [data-testid="column"] {
+            display: flex !important;
+            flex-direction: column !important;
+            height: 100% !important; /* Forces column to fill the horizontal block */
+            min-height: 1px !important; /* Fix for flex child height calculations */
+        }
+        
+        /* 3. Force the inner Vertical Block to also take full height */
+        /* Streamlit wraps content in a stVerticalBlock inside the column */
+        [data-testid="column"] > div[data-testid="stVerticalBlock"] {
+            display: flex !important;
+            flex-direction: column !important;
+            height: 100% !important;
+            min-height: 100% !important;
+            flex-grow: 1 !important;
+            justify-content: flex-start !important; /* Stack normally */
+        }
+        
+        /* 4. Target the Insight Component (iframe container) and push it to bottom */
+        /* We select the last element-container in the vertical block */
+        [data-testid="column"] > div[data-testid="stVerticalBlock"] > div.element-container:last-child {
+            margin-top: auto !important;
+            padding-bottom: 0px !important;
+            flex-grow: 0 !important; /* Don't stretch the button container itself */
+        }
+        
+        /* Adjust iframe margin to be flush */
+        iframe {
+            display: block !important; /* Removes inline spacing */
+        }
 
-    if submit_button:
-        if not keyword:
-            st.warning("Please enter a target keyword.")
-        else:
-            # Create Tabs
-            tab_intel, tab_contro, tab_coach = st.tabs(["📊 Intelligence Report", "🔥 Controversy Monitor", "🏆 Winning Formula"])
-            
-            with tab_intel:
-                run_intelligence_report(keyword)
-def main():
-    st.title("🛡️ VIP Intelligence Platform")
-    st.markdown("### Strategic Analysis of Misinformation Campaigns")
-
+    </style>
+    """, unsafe_allow_html=True)
+    
     # Initialize Session State
     if 'active_keyword' not in st.session_state:
         st.session_state['active_keyword'] = None
@@ -1228,7 +1564,7 @@ def main():
     with st.form(key='search_form'):
         col1, col2 = st.columns([4, 1])
         with col1:
-            keyword_input = st.text_input("Intelligence Target (e.g. 'Elon Musk', 'Tesla')", placeholder="Enter keyword to analyze...")
+            keyword_input = st.text_input("Search Topic (e.g. 'Elon Musk', 'Tesla')", placeholder="Enter topic or keyword to analyze...")
         with col2:
             st.markdown("<br>", unsafe_allow_html=True)
             submit_button = st.form_submit_button(label="Generate Report", type="primary", use_container_width=True)
@@ -1246,11 +1582,11 @@ def main():
         
         # Smart Navigation (Stateful)
         if 'active_view' not in st.session_state:
-            st.session_state['active_view'] = "📊 Intelligence Report"
+            st.session_state['active_view'] = "📊 Analytics Report"
             
         view = st.radio(
             "Navigation", 
-            ["📊 Intelligence Report", "🔥 Controversy Monitor", "🏆 The Winning Formula"],
+            ["📊 Analytics Report", "🔥 Controversy Monitor", "🏆 The Winning Formula", "🕵️ Investigator"],
             horizontal=True,
             key='active_view',
             label_visibility="collapsed"
@@ -1258,12 +1594,14 @@ def main():
         st.markdown("---")
         
         # Router Logic
-        if view == "📊 Intelligence Report":
+        if view == "📊 Analytics Report":
             run_intelligence_report(keyword)
         elif view == "🔥 Controversy Monitor":
             run_controversy_monitor(keyword)
         elif view == "🏆 The Winning Formula":
             run_winning_formula(keyword)
+        elif view == "🕵️ Investigator":
+            run_investigator_tab(keyword)
 
     # --- END OF DASHBOARD ---
     

@@ -26,4 +26,12 @@ pytest
 # Data & generated outputs
 data/
 output/
-docs/
+# docs/ <- Un-ignored to allow strategy docs
+
+# Massive Context Dumps
+all_code_and_data.md
+*.snippet
+*.py_snippet
+
+# Exclude Raw API Reference (Clutter)
+docs/x-api-*.md
