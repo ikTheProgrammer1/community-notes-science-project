@@ -170,14 +170,8 @@ run.sh                  # convenience runner
 ```
 
 ---
-
-## License
-
-MIT
-
 ## Contact
 
 **Nicolas Matta**
-*   Email: [EMAIL]
-*   LinkedIn: [LINKEDIN]
-*   X: [X]
+*   Email: nico.matta1221@yahoo.com
+*   X: https://x.com/ikTheProgramner
