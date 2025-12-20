@@ -4,6 +4,8 @@ import duckdb
 import os
 import json
 from urllib.parse import urlparse
+import sys
+import shutil
 
 # ... (Configuration and CSS remain similar, updating Title)
 st.set_page_config(
@@ -14,12 +16,131 @@ st.set_page_config(
 )
 
 # ... (CSS: Add metric styling) ...
-# Constants
-NOTES_DB_PATH = "data/notes-00000.tsv"
-STATUS_DB_PATH = "data/noteStatusHistory-00000.tsv"
-RATINGS_DB_PATH = "data/ratings-*.tsv"
+# Configuration
+CN_DUCKDB_PATH = os.getenv("CN_DUCKDB_PATH")  # Mounted source contract
+ALLOW_TSV_FALLBACK = os.getenv("ALLOW_TSV_FALLBACK") == "1"
+IS_CLOUD_RUN = os.getenv("K_SERVICE") is not None
+IS_STRICT = IS_CLOUD_RUN or os.getenv("CN_STRICT") == "1"
+
+# --- Ephemeral Storage Optimization (Copy-Once Guard) ---
+_DB_LOCALIZED = False  # Module-level: prevents Streamlit rerun re-copies
+
+def _localize_db_once(mounted_path: str, local_path: str) -> str:
+    """
+    Copy DB from GCS mount to /tmp for fast local access.
+    Runs ONCE per Cloud Run instance, not per Streamlit interaction.
+    """
+    global _DB_LOCALIZED
+    if _DB_LOCALIZED:
+        return local_path  # Already done this instance
+    
+    # Validity check: exists AND non-zero size
+    if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+        size_mb = os.path.getsize(local_path) / (1024 * 1024)
+        print(f"INFO: Localized DB. Source: {mounted_path}. Local: {local_path}. Size: {size_mb:.1f}MB. Action: skipped.", file=sys.stderr)
+        _DB_LOCALIZED = True
+        return local_path
+    
+    # Atomic copy: temp file → rename
+    tmp_path = local_path + ".tmp"
+    shutil.copy2(mounted_path, tmp_path)
+    os.rename(tmp_path, local_path)
+    size_mb = os.path.getsize(local_path) / (1024 * 1024)
+    print(f"INFO: Localized DB. Source: {mounted_path}. Local: {local_path}. Size: {size_mb:.1f}MB. Action: copied.", file=sys.stderr)
+    _DB_LOCALIZED = True
+    return local_path
+
+# --- Startup Logic (Environment-Aware) ---
+
+def _resolve_db_path():
+    """
+    Resolves the database path based on environment.
+    - Strict (Cloud Run or CN_STRICT=1): Validate → Localize → Connect. Fail fast.
+    - Local (default): Flexible fallback. Warn on issues.
+    Returns: (db_path_in_use, using_artifact, mode_label)
+    """
+    if IS_STRICT:
+        # --- STRICT MODE: Validate → Localize → Connect ---
+        if not CN_DUCKDB_PATH:
+            msg = "CRITICAL ERROR: CN_DUCKDB_PATH not set. Check deployment config."
+            print(msg, file=sys.stderr)
+            sys.exit(1)
+        if not (os.path.exists(CN_DUCKDB_PATH) and os.access(CN_DUCKDB_PATH, os.R_OK)):
+            msg = f"CRITICAL ERROR: CN_DUCKDB_PATH={CN_DUCKDB_PATH} not found/readable. Check GCS mount."
+            print(msg, file=sys.stderr)
+            sys.exit(1)
+        
+        # Localize to /tmp for performance (Cloud Run only)
+        if IS_CLOUD_RUN:
+            local_path = "/tmp/community_notes.duckdb"
+            db_path_in_use = _localize_db_once(CN_DUCKDB_PATH, local_path)
+        else:
+            db_path_in_use = CN_DUCKDB_PATH  # Local strict: use directly
+        
+        return db_path_in_use, True, "PRODUCTION" if IS_CLOUD_RUN else "LOCAL (strict)"
+    
+    else:
+        # --- LOCAL: Flexible Mode ---
+        # Priority: env var → full artifact → sample artifact → TSV
+        
+        if CN_DUCKDB_PATH and os.path.exists(CN_DUCKDB_PATH) and os.access(CN_DUCKDB_PATH, os.R_OK):
+            return CN_DUCKDB_PATH, True, "LOCAL (env var)"
+        
+        if CN_DUCKDB_PATH:
+            print(f"WARNING: CN_DUCKDB_PATH={CN_DUCKDB_PATH} not found. Trying defaults...", file=sys.stderr)
+        
+        full_artifact = "artifacts/community_notes_full.duckdb"
+        sample_artifact = "artifacts/community_notes_sample.duckdb"
+        
+        if os.path.exists(full_artifact):
+            return full_artifact, True, "LOCAL (full artifact)"
+        if os.path.exists(sample_artifact):
+            return sample_artifact, True, "LOCAL (sample artifact)"
+        
+        if ALLOW_TSV_FALLBACK:
+            print("WARNING: No DuckDB artifact. Using TSV fallback.", file=sys.stderr)
+            return None, False, "LOCAL (TSV fallback)"
+        
+        msg = "Configuration Error: No DuckDB artifact found. Run 'python scripts/build_db.py' or set ALLOW_TSV_FALLBACK=1."
+        st.error(msg)
+        print(msg, file=sys.stderr)
+        sys.exit(1)
+
+# Execute startup resolution
+DB_PATH_IN_USE, USING_ARTIFACT, _MODE_LABEL = _resolve_db_path()
+
+if USING_ARTIFACT:
+    NOTES_DB_PATH = "notes"
+    STATUS_DB_PATH = "status_history"
+    RATINGS_DB_PATH = "ratings"
+    
+    # Startup Telemetry (after localization)
+    try:
+        with duckdb.connect(database=DB_PATH_IN_USE, read_only=True) as con:
+            count = con.execute("SELECT count(*) FROM notes").fetchone()[0]
+            print(f"INFO: Startup Complete. Mode: {_MODE_LABEL}. Path: {DB_PATH_IN_USE}. Notes: {count}.", file=sys.stderr)
+    except Exception as e:
+        print(f"WARNING: Startup telemetry failed: {e}", file=sys.stderr)
+else:
+    NOTES_DB_PATH = "data/notes-00000.tsv"
+    STATUS_DB_PATH = "data/noteStatusHistory-00000.tsv"
+    RATINGS_DB_PATH = "data/ratings-*.tsv"
+    print(f"INFO: Startup Complete. Mode: {_MODE_LABEL}. Using TSV files.", file=sys.stderr)
 
 # --- Helper Functions ---
+
+def get_db_connection():
+    """
+    Connects to DB_PATH_IN_USE (the localized /tmp copy in Cloud Run).
+    """
+    if USING_ARTIFACT:
+        try:
+            return duckdb.connect(database=DB_PATH_IN_USE, read_only=True)
+        except Exception as e:
+            st.error(f"Failed to connect to artifact: {e}")
+            return duckdb.connect(database=':memory:')
+    else:
+        return duckdb.connect(database=':memory:')
 
 def deterministic_sample(df, n=5000, seed=42):
     """
@@ -223,17 +344,32 @@ def render_inline_insight(context_data, element_id, prompt_context=""):
             btn.onclick = async () => {{
                 // Transitions
                 btn.disabled = true;
-                btn.innerHTML = '<div class="spinner"></div> ESTABLISHING SECURE CONNECTION...';
+                btn.innerHTML = '<div class="spinner"></div> CHECKING WEBGPU...';
                 
                 try {{
+                    // 0. Check WebGPU support
+                    if (!navigator.gpu) {{
+                        throw new Error("WebGPU not supported in this browser. Use Chrome 113+ or Edge 113+.");
+                    }}
+                    
                     // 1. Initialize Engine (Cached)
                     if (!engine) {{
+                        btn.innerHTML = '<div class="spinner"></div> DOWNLOADING MODEL (1.5GB)...';
                         engine = await CreateMLCEngine(SELECTED_MODEL, {{
                             initProgressCallback: (report) => {{
                                 console.log(report.text);
+                                // Show download progress
+                                if (report.progress) {{
+                                    const pct = Math.round(report.progress * 100);
+                                    btn.innerHTML = `<div class="spinner"></div> LOADING: ${{pct}}%`;
+                                }} else {{
+                                    btn.innerHTML = '<div class="spinner"></div> ' + report.text.substring(0,30) + '...';
+                                }}
                             }}
                         }});
                     }}
+                    
+                    btn.innerHTML = '<div class="spinner"></div> GENERATING...';
                     
                     // 2. Prepare Prompt
                     const messages = [
@@ -273,8 +409,8 @@ def render_inline_insight(context_data, element_id, prompt_context=""):
                     container.style.display = 'none';
                     btn.style.display = 'flex';
                     btn.disabled = false;
-                    btn.innerHTML = "⚠️ CONNECTION FAILED - RETRY";
-                    alert("Error: " + err.message);
+                    btn.innerHTML = "⚠️ " + err.message.substring(0, 40);
+                    console.error("WebLLM Error:", err);
                 }}
             }};
         </script>
@@ -350,8 +486,9 @@ def search_notes_by_keyword(keyword):
     """
     
     try:
-        con = duckdb.connect(database=':memory:')
-        if not os.path.exists(NOTES_DB_PATH) or not os.path.exists(STATUS_DB_PATH):
+        con = get_db_connection()
+        # In artifact mode, we don't need to check for TSV files
+        if not USING_ARTIFACT and (not os.path.exists(NOTES_DB_PATH) or not os.path.exists(STATUS_DB_PATH)):
             st.error("Data files not found!")
             return pd.DataFrame()
 
@@ -386,8 +523,8 @@ def search_controversial_notes(keyword):
     """
     
     try:
-        con = duckdb.connect(database=':memory:')
-        if not os.path.exists(NOTES_DB_PATH): return pd.DataFrame()
+        con = get_db_connection()
+        if not USING_ARTIFACT and not os.path.exists(NOTES_DB_PATH): return pd.DataFrame()
         
         df_notes = con.execute(query_notes).df()
         
@@ -621,8 +758,8 @@ def fetch_comparative_data(keyword):
     ORDER BY n.createdAtMillis DESC
     """
     try:
-        con = duckdb.connect(database=':memory:')
-        if not os.path.exists(NOTES_DB_PATH): return pd.DataFrame()
+        con = get_db_connection()
+        if not USING_ARTIFACT and not os.path.exists(NOTES_DB_PATH): return pd.DataFrame()
         return con.execute(query).df()
     except Exception as e:
         return pd.DataFrame()
@@ -726,8 +863,8 @@ def fetch_hall_of_fame(keyword):
     """
     
     try:
-        con = duckdb.connect(database=':memory:')
-        if not os.path.exists(NOTES_DB_PATH): return pd.DataFrame()
+        con = get_db_connection()
+        if not USING_ARTIFACT and not os.path.exists(NOTES_DB_PATH): return pd.DataFrame()
         
         df_notes = con.execute(query_notes).df()
         if df_notes.empty: return pd.DataFrame()
@@ -1016,8 +1153,6 @@ def run_intelligence_report(keyword):
         st.caption("Forensic Analysis: When is the crisis activity hottest? (Timezone / Staffing Optimization)")
         
         heatmap_chart = generate_crisis_heatmap(results)
-        if heatmap_chart:
-            st.altair_chart(heatmap_chart, use_container_width=True)
         if heatmap_chart:
             st.altair_chart(heatmap_chart, use_container_width=True)
             # In-Line Insight
