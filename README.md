@@ -3,7 +3,7 @@
 Local-first analytics and investigation tooling built on the public Community Notes dataset.
 It helps answer: **what spiked, who drove it, and what narratives emerged**, with optional AI assistance.
 
-**Demo (2–3 min):** *https://youtu.be/piiLeL1NTzQ*
+**Demo video:** *https://youtu.be/piiLeL1NTzQ*
 **Screenshots / GIF:** **
 **Status:**active development, iterating on performance and UX
 
