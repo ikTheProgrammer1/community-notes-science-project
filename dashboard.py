@@ -6,6 +6,7 @@ import json
 from urllib.parse import urlparse
 import sys
 import shutil
+import hashlib
 
 # ... (Configuration and CSS remain similar, updating Title)
 st.set_page_config(
@@ -452,6 +453,12 @@ def extract_domain(url_list_str):
             domains.append(domain)
     return domains
 
+def format_friendly_label(text):
+    """Converts SCREAMING_SNAKE_CASE to Title Case with spaces."""
+    if not text or not isinstance(text, str):
+        return str(text)
+    return text.replace('_', ' ').title()
+
 def search_notes_by_keyword(keyword):
     """
     Search for HELPFUL notes and retrieve columns needed for strategic analysis.
@@ -463,6 +470,7 @@ def search_notes_by_keyword(keyword):
     
     query = f"""
     SELECT 
+        CAST(n.noteId AS VARCHAR) AS noteId,
         CAST(n.tweetId AS VARCHAR) AS tweetId,
         n.classification,
         n.summary,
@@ -479,7 +487,7 @@ def search_notes_by_keyword(keyword):
         CAST(s.timestampMillisOfFirstNonNMRStatus AS BIGINT) AS timestampMillisOfFirstNonNMRStatus
     FROM '{NOTES_DB_PATH}' AS n
     JOIN '{STATUS_DB_PATH}' AS s ON n.noteId = s.noteId
-    WHERE n.summary ILIKE '%{keyword}%'
+    WHERE (n.summary ILIKE '%{keyword}%' OR CAST(n.noteId AS VARCHAR) = '{keyword}')
       AND s.currentStatus = 'CURRENTLY_RATED_HELPFUL'
       AND n.classification = 'MISINFORMED_OR_POTENTIALLY_MISLEADING'
     ORDER BY n.createdAtMillis DESC
@@ -1415,7 +1423,7 @@ def run_winning_formula(keyword):
                     main_text = row['summary']
                 
                 # Create a safe display version (escape $, and ensure blockquote works)
-                display_text = main_text.replace('$', '\$')
+                display_text = main_text.replace('$', r'\$')
                 
                 # Extract original sources
                 sources = re.findall(r'(https?://\S+)', row['summary'])
@@ -1470,12 +1478,281 @@ def run_winning_formula(keyword):
 
 
 
-def run_investigator_tab(keyword):
+def render_forensic_message(data):
     """
-    Cloud-Only "Power User" tab for deep forensic analysis.
-    Gated by API Key (xAI, OpenAI, Anthropic).
+    Renders the strictly typed Evidence Contract JSON with a Reproducibility Card.
     """
-    st.header(f"🕵️ Investigator Mode: {keyword}")
+    # 1. Metadata Header (Reproducibility Card)
+    meta = data.get("query_meta", {})
+    stats = meta.get("retrieval_stats", {})
+    filters = meta.get("filters", {})
+    
+    q_id = meta.get("query_id", "Unknown")[:8]
+    b_id = stats.get("evidence_bundle_id", "Unknown")[:8]
+    
+    # Card Container
+    with st.expander(f"🧾 Forensic Record: {q_id}", expanded=True):
+        # Top Row: Stats
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Matches", stats.get('total_matches', 0))
+        c2.metric("Evidence Sent", stats.get('evidence_bundle_size', 0))
+        c3.caption(f"**Query ID**: `{q_id}`")
+        c4.caption(f"**Bundle ID**: `{b_id}`")
+        
+        # Middle Row: Filters & Actions
+        st.markdown("---")
+        ac1, ac2 = st.columns([3, 1])
+        with ac1:
+            st.markdown(f"**Active Filters**: `Time: {filters.get('time_range', {}).get('start', 'N/A')[:4]}+`")
+        with ac2:
+             # Actions
+             full_q_id = meta.get("query_id")
+             bundle = st.session_state.get("evidence_bundles", {}).get(full_q_id)
+             
+             if bundle:
+                 # Convert list of dicts to CSV
+                 import pandas as pd
+                 csv_data = pd.DataFrame(bundle).to_csv(index=False).encode('utf-8')
+                 
+                 st.download_button(
+                     label="⬇️ Export Evidence",
+                     data=csv_data,
+                     file_name=f"evidence_bundle_{q_id}.csv",
+                     mime="text/csv",
+                     key=f"btn_export_{q_id}",
+                     help="Download absolute evidence bundle used for this answer."
+                 )
+             else:
+                 st.button("⬇️ Export Evidence", disabled=True, key=f"btn_export_disabled_{q_id}", help="Evidence bundle not found in archive.")
+             
+        # Bottom Row: Debug Details
+        if st.checkbox("Show Query Details", key=f"chk_{q_id}"):
+            st.code(json.dumps(meta, indent=2), language="json")
+
+    st.markdown("### Findings") # Changed from "### findings" to "### Findings" for better title casing
+    
+    findings = data.get("dataset_findings", {})
+    
+    # 2. Claims & Evidence
+    claims = findings.get("claims", [])
+    if claims:
+        for i, claim in enumerate(claims):
+            escaped_claim = claim.get('claim_text', '').replace('$', r'\$')
+            
+            # Render Claim
+            st.markdown(f"**{i+1}.** {escaped_claim}")
+            
+            # Render Evidence Citations
+            evidence = claim.get("evidence", [])
+            
+            # Uncertainty Badge
+            unc = claim.get("uncertainty", "low").lower()
+            color = "green" if unc == "low" else "orange" if unc == "medium" else "red"
+            
+            # Create columns for uncertainty badge and evidence refs
+            cols = st.columns(len(evidence) + 1)
+            cols[0].markdown(f":{color}[Uncertainty: {unc.upper()}]")
+            
+            for j, ev in enumerate(evidence):
+                nid = ev.get("note_id", "Unknown")
+                support = ev.get("support_text", "No support text.")
+                # Interactive Reference Button
+                # Fix: Ensure uniqueness by including claim index (i) and evidence index (j)
+                if cols[j+1].button(f"Ref {nid}", key=f"btn_{q_id}_c{i}_e{j}_{nid}", help=f"Note {nid}:\n{support}"):
+                    st.session_state.active_inspector_note = nid
+                    # BUG FIX: Use FULL Hash for lookup, not truncated display ID
+                    st.session_state.active_inspector_query_hash = meta.get("query_id")
+                    st.rerun()
+    
+    # 3. Cannot Conclude
+    unknowns = findings.get("cannot_conclude", [])
+    if unknowns:
+        st.warning("⚠️ **Unresolved Questions**")
+        for item in unknowns:
+            q = item.get("question_part", "Unknown")
+            r = item.get("reason", "Unknown")
+            st.markdown(f"- **{q}**: {r}")
+
+def get_note_details(note_id):
+    """
+    Fetches full details for a specific note ID from the database.
+    Used for the Evidence Inspector to ensure ground truth.
+    """
+    try:
+        con = get_db_connection()
+        
+        # Use simple single quoting like search_controversial_notes
+        # Query updated to fetch ALL relevant forensic columns
+        query = f"""
+        SELECT 
+            CAST(n.noteId AS VARCHAR) AS noteId,
+            CAST(n.tweetId AS VARCHAR) AS tweetId,
+            n.summary,
+            CAST(n.createdAtMillis AS BIGINT) AS createdAtMillis,
+            n.classification,
+            n.believable,
+            n.harmful,
+            n.validationDifficulty,
+            n.misleadingOther,
+            n.misleadingFactualError,
+            n.misleadingManipulatedMedia,
+            n.misleadingOutdatedInformation,
+            n.misleadingMissingImportantContext,
+            n.misleadingUnverifiedClaimAsFact,
+            n.misleadingSatire,
+            n.notMisleadingOther,
+            n.notMisleadingFactuallyCorrect,
+            n.notMisleadingOutdatedButNotWhenWritten,
+            n.notMisleadingClearlySatire,
+            n.notMisleadingPersonalOpinion,
+            n.trustworthySources,
+            n.isMediaNote,
+            s.currentStatus,
+            CAST(s.timestampMillisOfCurrentStatus AS BIGINT) AS timestampMillisOfCurrentStatus
+        FROM '{NOTES_DB_PATH}' AS n
+        LEFT JOIN '{STATUS_DB_PATH}' AS s ON n.noteId = s.noteId
+        WHERE CAST(n.noteId AS VARCHAR) = '{note_id}'
+        LIMIT 1
+        """
+        
+        df = con.execute(query).df()
+        
+        if not df.empty:
+            return df.iloc[0].to_dict()
+        return None
+    except Exception as e:
+        print(f"Error fetching note details: {e}")
+        return None
+
+@st.dialog("Evidence Inspector")
+def evidence_inspector_modal(nid):
+    """
+    Modal Dialog for Deep Inspection of a single evidence note.
+    Forces focus and allows clean dismissal.
+    Implements STRICT FORENSIC ALLOWLIST CHECK.
+    """
+    # 1. Forensic Access Control (Soft Check)
+    q_hash = st.session_state.get("active_inspector_query_hash")
+    
+    # FETCH DATA FIRST (to check existence vs context)
+    details = get_note_details(nid)
+    
+    is_context_verified = False
+    
+    # FETCH DATA FIRST (to check existence vs context)
+    details = get_note_details(nid)
+    
+    is_context_verified = False
+    
+    if q_hash and q_hash in st.session_state.evidence_bundles:
+        bundle = st.session_state.evidence_bundles[q_hash]
+        # Fix: Bundle uses 'noteId' (CamelCase) from SQL query alias
+        is_context_verified = any(str(item.get("noteId") or item.get("note_id")) == str(nid) for item in bundle)
+    
+    if is_context_verified:
+        st.caption("✅ **Verified Context**: This note was present in the analysis source bundle.")
+    elif details:
+        # Note exists in DB, but wasn't in context
+        st.warning("⚠️ **Verification Warning: Reference Not in Context**")
+        st.caption(f"This note exists in the database but was NOT part of the top 50 evidence records provided to the model.")
+        st.caption("The model retrieved this valid record from its internal training data (or extended memory), not the strict session context.")
+    else:
+        # Note does NOT exist in DB (True Hallucination)
+        st.error("⛔ **Hallucinated Reference**")
+        st.caption("This note ID does not exist in the database.")
+        
+        # Proceed to fetch data...
+
+    # 2. Render Data (if exists)
+    # details already fetched above
+    
+    if details:
+        # --- AUDIT GRADE METADATA GRID ---
+        # No truncation allowed. Use columns with explicit markup.
+        
+        # Row 1: Key Auditable Fields
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.caption("Created Date")
+            st.markdown(f"**{pd.to_datetime(details.get('createdAtMillis', 0), unit='ms').strftime('%Y-%m-%d')}**")
+        
+        with c2:
+            st.caption("Current Status")
+            raw_status = details.get('currentStatus', 'Unknown')
+            # Friendly label + Tooltip for raw value
+            st.markdown(f"**{format_friendly_label(raw_status)}**", help=f"Raw Value: {raw_status}")
+            
+        with c3:
+            st.caption("Classification")
+            raw_class = details.get('classification', 'N/A')
+            st.markdown(f"**{format_friendly_label(raw_class)}**", help=f"Raw Value: {raw_class}")
+            
+        st.divider()
+        
+        # Row 2: Note Summary (Expandable/Scrollable)
+        st.caption("Note Content (Dataset Field)")
+        summary_text = details.get('summary', 'No summary available.')
+        
+        # Use a container-like look for the summary
+        with st.container(border=True):
+             st.markdown(summary_text)
+        
+        # Row 3: Forensic IDs (Copyable)
+        with st.expander("🔑 Forensic IDs & Audit Trail"):
+             ic1, ic2 = st.columns(2)
+             with ic1:
+                 st.caption("Note ID")
+                 st.code(str(nid), language="text")
+                 st.caption("Tweet ID")
+                 st.code(str(details.get('tweetId', 'N/A')), language="text")
+             with ic2:
+                 st.caption("Bundle Query Hash")
+                 st.code(q_hash or "N/A", language="text")
+                 st.caption("Participant ID")
+                 st.code(str(details.get('noteAuthorParticipantId', 'N/A')), language="text")
+        
+        # Misleading Flags (Red Alerts)
+        tags = []
+        if details.get('misleadingFactualError'): tags.append("Factual Error")
+        if details.get('misleadingManipulatedMedia'): tags.append("Manipulated Media")
+        if details.get('misleadingOutdatedInformation'): tags.append("Outdated")
+        if details.get('misleadingMissingImportantContext'): tags.append("Missing Context")
+        if details.get('misleadingUnverifiedClaimAsFact'): tags.append("Unverified Claim")
+        
+        if tags:
+            st.error(f"**Flags**: {', '.join(tags)}")
+            
+        st.divider()
+        
+        # 3. Raw Forensic Record
+        with st.expander("📂 Raw Forensic Record (Full Row)", expanded=False):
+            st.caption("This view displays the literal database row used for analysis. Null values are hidden from default view but present here.")
+            # Convert milliseconds to readable datetime for display, but keep raw too?
+            # Just dump details dict.
+            st.json(details, expanded=True)
+            
+    else:
+        st.error(f"Note {nid} not found in database.")
+
+def run_chat_interface(keyword):
+    """
+    Cloud-Only Chat Interface for deep forensic analysis.
+    Interact directly with Community Notes data via Grok/GPT-4.
+    """
+    # Active Inspector Check (Modal Trigger)
+    if "active_inspector_note" in st.session_state and st.session_state.active_inspector_note:
+        evidence_inspector_modal(st.session_state.active_inspector_note)
+        # We rely on Streamlit dialog lifecycle.
+        # If user closes dialog, they remain on page.
+        # But active_inspector_note remains set?
+        # If active_inspector_note is set, dialog opens on rerun.
+        # If user closes dialog, typically Streamlit re-runs script?
+        # If so, we need to clear this state or the dialog will pop open again?
+        # Actually, @st.experimental_dialog handles this. It opens on call.
+        # If user closes it, script might rerun?
+        # Let's assume standard behavior: we just call it.
+    
+    st.header(f"🔎 Forensic Pattern Analysis: {keyword}")
     
     # --- 1. GATEKEEPER (Lock Screen) ---
     if 'cloud_api_key' not in st.session_state or not st.session_state['cloud_api_key']:
@@ -1503,15 +1780,11 @@ def run_investigator_tab(keyword):
             # Default Selection Logic
             default_index = 0
             if provider == "xAI":
-                # Default to Fast (Standard) - Index 1 based on dict order text above
-                # Dictionary order is preserved in Python 3.7+
-                # "Grok 4.1 Fast (Reasoning)", "Grok 4.1 Fast (Standard)", ...
                 try:
                     default_index = model_labels.index("Grok 4.1 Fast (Standard)")
                 except ValueError:
                     default_index = 0
             elif provider == "OpenAI":
-                # Default to GPT-5.2
                 try:
                     default_index = model_labels.index("GPT-5.2 (Flagship)")
                 except ValueError:
@@ -1528,85 +1801,157 @@ def run_investigator_tab(keyword):
                     st.session_state['cloud_api_key'] = api_key
                     st.session_state['cloud_provider'] = provider
                     st.session_state['cloud_model_id'] = selected_model_id
-                    st.rerun()
                 else:
                     st.error("Invalid API Key length.")
         return # Stop rendering
 
-    # --- 2. INVESTIGATOR INTERFACE (Unlocked) ---
+    # --- 2. CHAT INTERFACE (Unlocked) ---
     
     # Utility Bar
     c1, c2 = st.columns([3, 1])
     with c1:
-        # Show specific model
         st.success(f"✅ UPLINK ESTABLISHED: {st.session_state['cloud_provider']} // {st.session_state.get('cloud_model_id', 'Unknown Model')}")
     with c2:
         if st.button("🔒 DISCONNECT"):
             st.session_state['cloud_api_key'] = None
             st.rerun()
             
-    # Input Area
     st.markdown("---")
-    query = st.text_area("Forensic Query", height=100, 
-                        placeholder="e.g., 'Trace the evolution of the narrative regarding the CEO's resignation. Identify the first instance of the 'fraud' claim.'")
-    
-    if st.button("⚡ EXECUTE FORENSIC ANALYSIS", type="primary"):
-        if not query:
-            st.warning("Please enter a query.")
-            return
 
-        # Fetch Context (Reusing logic from run_intelligence_report roughly)
-        # For now, we fetch ALL notes for the keyword to give max context
-        notes_df = search_notes_by_keyword(keyword)
+    # Initialize Chat History
+    if "chat_messages" not in st.session_state:
+        st.session_state.chat_messages = []
+        # Initial Greeting
+        st.session_state.chat_messages.append({
+            "role": "assistant",
+            "content": f"**Forensic Link Active.**\n\nI have access to the Community Notes (corrections) dataset for **'{keyword}'**.\n\nAsk me about **common misinformation patterns**, **correction themes**, or specific claims.\n\n*Note: This data reflects dispute contexts, not general public sentiment.*",
+            "type": "text"
+        })
         
-        # Filter by keyword
-        filtered_notes = notes_df[
-            notes_df['summary'].str.contains(keyword, case=False, na=False) |
-            notes_df['tweetId'].astype(str).str.contains(keyword, case=False, na=False)
-        ]
+    # Initialize Evidence Archive for Exports
+    if "evidence_bundles" not in st.session_state:
+        st.session_state.evidence_bundles = {}
         
-        # Limit payload to prevent token overflow (though cloud models handle 128k+)
-        # Let's verify we have data
-        if filtered_notes.empty:
-            st.error("No intelligence data found for this target.")
-            return
+    # Initialize Evidence Inspector State
+    if "selected_evidence" not in st.session_state:
+        st.session_state.selected_evidence = set()
 
-        # Serialize Data
-        # We take top 50 citations ?? Or just top 50 by date?
-        # Let's take top 50 most recent for narrative evolution
-        context_payload = filtered_notes.sort_values('createdAtMillis', ascending=False).head(50).to_dict(orient='records')
-        
-        # Stream Output
-        client = UniversalCloudAdapter(st.session_state['cloud_provider'], st.session_state['cloud_api_key'])
-        
-        st.markdown("### 📝 Forensic Report")
-        
-        # Static Status Indicator (Disappears when stream starts if possible, but stream writes are diff)
-        # Better pattern: Use status for the content preparation, then write stream
-        with st.status("🕵️ Analyzing Intelligence...", expanded=True) as status:
-            st.write("Initializing Neural Uplink...")
-            st.write("Compiling Context Data...")
+    # Display Chat History
+    for msg in st.session_state.chat_messages:
+        with st.chat_message(msg["role"]):
+            if msg.get("type") == "evidence_json":
+                render_forensic_message(msg["content"])
+            else:
+                st.markdown(msg["content"])
+
+    # Handle Input
+    if prompt := st.chat_input(f"Interrogate data for '{keyword}'..."):
+        # 1. User Message
+        st.session_state.chat_messages.append({"role": "user", "content": prompt, "type": "text"})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # 2. Assistant Response
+        with st.chat_message("assistant"):
+            # RAG: Fetch Context
+            notes_df = search_notes_by_keyword(keyword)
+            # Filter again (redundant but safe)
+            filtered_notes = notes_df[
+                notes_df['summary'].str.contains(keyword, case=False, na=False) |
+                notes_df['tweetId'].astype(str).str.contains(keyword, case=False, na=False) |
+                notes_df['noteId'].astype(str).str.contains(keyword, case=False, na=False)
+            ]
             
-            try:
-                # Stream generator
-                stream = client.generate_forensic_report(
-                    get_investigator_system_prompt(),
-                    context_payload,
-                    query,
-                    model_id=st.session_state['cloud_model_id']
-                )
-                
-                # We need to render the stream outside the status to make it permanent?
-                # Actually, user wants status to disappear or update.
-                # Let's just finish the status then stream below.
-                status.update(label="Analysis Complete", state="complete", expanded=False)
-            except Exception as e:
-                st.error(f"Initialization Failed: {e}")
+            # Start/End Date Mock
+            start_date = "2024-01-01" 
+            end_date = "2025-12-31"
+
+            if filtered_notes.empty:
+                # Handle Empty Result with Structured Report
+                empty_meta = {
+                    "query_meta": {
+                        "query_id": hashlib.sha256(keyword.encode()).hexdigest(),
+                        "retrieval_stats": {
+                            "total_matches": 0, "sent_to_model": 0, "evidence_bundle_size": 0
+                        },
+                        "filters": {"time_range": {"start": start_date, "end": end_date}}
+                    },
+                    "dataset_findings": {
+                        "claims": [], 
+                        "cannot_conclude": [{"question_part": keyword, "reason": "No evidence found in database."}]
+                    }
+                }
+                render_forensic_message(empty_meta)
+                st.session_state.chat_messages.append({"role": "assistant", "content": empty_meta, "type": "evidence_json"})
                 return
 
-        st.write_stream(stream)
+            # Prepare Payload (Top 50 recent)
+            # Use deterministic sorting for reproducibility (Time + NoteID tiebreaker)
+            context_notes = filtered_notes.sort_values(['createdAtMillis', 'noteId'], ascending=[False, True]).head(50)
+            context_payload = context_notes.to_dict(orient='records')
             
-        # No outer except needed as we handle it inside
+            # Canonical Hash: Hashing the SORTED tuple of NoteIDs + Query
+            note_ids = sorted([str(n['noteId']) for n in context_payload])
+            canonical_str = f"{prompt}|{','.join(note_ids)}"
+            query_id_hash = hashlib.sha256(canonical_str.encode()).hexdigest()
+            
+            # Archive Evidence Bundle for Export
+            st.session_state.evidence_bundles[query_id_hash] = context_payload
+
+            # DEBUG: Log Retrieval Context
+            print(f"[Dashboard] Query: '{keyword}'")
+            print(f"[Dashboard] Total Matches: {len(filtered_notes)}")
+            print(f"[Dashboard] Bundle Sent: {len(context_payload)}")
+            print(f"[Dashboard] Query Hash: {query_id_hash[:8]}")
+            
+            client = UniversalCloudAdapter(st.session_state['cloud_provider'], st.session_state['cloud_api_key'])
+            
+            try:
+                # Add Metadata to Context for Model Awareness
+                query_meta_obj = {
+                        "query_id": query_id_hash,
+                        "retrieval_stats": {
+                            "total_matches": len(filtered_notes),
+                            "sent_to_model": len(context_payload),
+                            "evidence_bundle_size": len(context_payload),
+                            "evidence_bundle_id": hashlib.sha256(",".join(note_ids).encode()).hexdigest()
+                        },
+                        "filters": {
+                            "time_range": {"start": start_date, "end": end_date}
+                        }
+                    }
+                
+                meta_context = {
+                    "query_meta": query_meta_obj,
+                    "notes": context_payload
+                }
+
+                gen = client.generate_forensic_report_v2(
+                    get_investigator_system_prompt(),
+                    meta_context, # Pass metadata wrapper
+                    prompt,
+                    model_id=st.session_state.get('cloud_model_id')
+                )
+                
+                # Stream Loop
+                status_placeholder = st.empty()
+                final_json = None
+                
+                for chunk in gen:
+                    if isinstance(chunk, dict):
+                        final_json = chunk
+                        status_placeholder.empty() # Clear status
+                    else:
+                        status_placeholder.markdown(chunk)
+                
+                if final_json:
+                    # INJECT METADATA
+                    final_json["query_meta"] = query_meta_obj
+                    render_forensic_message(final_json)
+                    st.session_state.chat_messages.append({"role": "assistant", "content": final_json, "type": "evidence_json"})
+                
+            except Exception as e:
+                st.error(f"Analysis Failed: {e}")
 
 
 
@@ -1709,6 +2054,7 @@ def main():
         st.session_state['active_keyword'] = keyword_input
         # Reset context on new search to avoid stale data
         st.session_state['webllm_context'] = "{}" 
+        st.session_state['chat_messages'] = []  # Reset chat history
         st.rerun()
 
     # 2. Render Main Dashboard (Persistent)
@@ -1717,11 +2063,11 @@ def main():
         
         # Smart Navigation (Stateful)
         if 'active_view' not in st.session_state:
-            st.session_state['active_view'] = "📊 Analytics Report"
+            st.session_state['active_view'] = "💬 Chat with Data"
             
         view = st.radio(
             "Navigation", 
-            ["📊 Analytics Report", "🔥 Controversy Monitor", "🏆 The Winning Formula", "🕵️ Investigator"],
+            ["💬 Chat with Data", "📊 Analytics Report", "🔥 Controversy Monitor", "🏆 The Winning Formula"],
             horizontal=True,
             key='active_view',
             label_visibility="collapsed"
@@ -1729,14 +2075,14 @@ def main():
         st.markdown("---")
         
         # Router Logic
-        if view == "📊 Analytics Report":
+        if view == "💬 Chat with Data":
+            run_chat_interface(keyword)
+        elif view == "📊 Analytics Report":
             run_intelligence_report(keyword)
         elif view == "🔥 Controversy Monitor":
             run_controversy_monitor(keyword)
         elif view == "🏆 The Winning Formula":
             run_winning_formula(keyword)
-        elif view == "🕵️ Investigator":
-            run_investigator_tab(keyword)
 
     # --- END OF DASHBOARD ---
     
