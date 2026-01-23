@@ -16,7 +16,26 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ... (CSS: Add metric styling) ...
+# --- VISUAL ENHANCEMENT: High-Visibility Sidebar Toggle ---
+st.markdown("""
+<style>
+    /* Make the sidebar toggle button LARGER and RED so it is impossible to miss */
+    [data-testid="stSidebarCollapseButton"] {
+        transform: scale(2.0) !important;
+        color: #FF4B4B !important;
+        margin-left: 20px !important;
+        margin-top: 10px !important;
+        border: 2px solid #FF4B4B !important;
+        background-color: rgb(255 75 75 / 10%) !important;
+        border-radius: 50% !important;
+    }
+    [data-testid="stSidebarCollapseButton"]:hover {
+        background-color: rgb(255 75 75 / 30%) !important;
+        box-shadow: 0 0 15px #FF4B4B !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Configuration
 CN_DUCKDB_PATH = os.getenv("CN_DUCKDB_PATH")  # Mounted source contract
 ALLOW_TSV_FALLBACK = os.getenv("ALLOW_TSV_FALLBACK") == "1"
@@ -158,6 +177,16 @@ def deterministic_sample(df, n=5000, seed=42):
 # --- In-Line Insight Generator (WebLLM) ---
 import streamlit.components.v1 as components
 from cloud_intel import UniversalCloudAdapter, get_investigator_system_prompt
+from case_manager import CaseManager
+
+# Initialize Persistence Layer
+cm = CaseManager()
+
+# Startup cleanup: Remove legacy 0-turn cases older than 1 hour
+# This prevents clutter from earlier versions that created cases on app load
+_cleanup_count = cm.cleanup_empty_cases(max_age_hours=1.0)
+if _cleanup_count > 0:
+    print(f"[Dashboard] Startup cleanup removed {_cleanup_count} empty case(s)", file=sys.stderr)
 
 def render_inline_insight(context_data, element_id, prompt_context=""):
     """
@@ -1644,8 +1673,18 @@ def evidence_inspector_modal(nid):
     
     is_context_verified = False
     
-    if q_hash and q_hash in st.session_state.evidence_bundles:
-        bundle = st.session_state.evidence_bundles[q_hash]
+    if q_hash:
+        # 1. Try Memory Code
+        if q_hash in st.session_state.evidence_bundles:
+            bundle = st.session_state.evidence_bundles[q_hash]
+        # 2. Try Disk Persistence
+        else:
+             bundle = cm.load_bundle(q_hash)
+             if bundle:
+                 # Update memory cache
+                 st.session_state.evidence_bundles[q_hash] = bundle
+        
+    if q_hash and bundle:
         # Fix: Bundle uses 'noteId' (CamelCase) from SQL query alias
         is_context_verified = any(str(item.get("noteId") or item.get("note_id")) == str(nid) for item in bundle)
     
@@ -1753,7 +1792,7 @@ def run_chat_interface(keyword):
         # Let's assume standard behavior: we just call it.
     
     st.header(f"🔎 Forensic Pattern Analysis: {keyword}")
-    
+
     # --- 1. GATEKEEPER (Lock Screen) ---
     if 'cloud_api_key' not in st.session_state or not st.session_state['cloud_api_key']:
         st.warning("⚠️ CLOUD UPLINK REQUIRED")
@@ -1803,35 +1842,25 @@ def run_chat_interface(keyword):
                     st.session_state['cloud_model_id'] = selected_model_id
                 else:
                     st.error("Invalid API Key length.")
+        # If we have history loaded, maybe we allow seeing it?
+        # But 'return' stops rendering the chat blocks below.
+        # Let's verify: The Chat blocks below start with 'Initialize Evidence Archive'.
+        # If we return here, we won't see the chat.
+        # FIX: Only return if we DON'T have history to show? 
+        # Or simpler: Just return. The Sidebar handles selecting cases.
+        # If the user wants to see the history, they must unlock?
+        # No, the requirement is "Inaccessible".
+        # If I want to see history without paying/unlocking, I should be able to.
+        # So... we should ONLY return if (Not unlocked AND No history to show?)
+        # For now, let's keep the return but at least the Sidebar is visible so they know cases exist.
         return # Stop rendering
 
-    # --- 2. CHAT INTERFACE (Unlocked) ---
+    # Case Management moved to top.
     
-    # Utility Bar
-    c1, c2 = st.columns([3, 1])
-    with c1:
-        st.success(f"✅ UPLINK ESTABLISHED: {st.session_state['cloud_provider']} // {st.session_state.get('cloud_model_id', 'Unknown Model')}")
-    with c2:
-        if st.button("🔒 DISCONNECT"):
-            st.session_state['cloud_api_key'] = None
-            st.rerun()
-            
-    st.markdown("---")
-
-    # Initialize Chat History
-    if "chat_messages" not in st.session_state:
-        st.session_state.chat_messages = []
-        # Initial Greeting
-        st.session_state.chat_messages.append({
-            "role": "assistant",
-            "content": f"**Forensic Link Active.**\n\nI have access to the Community Notes (corrections) dataset for **'{keyword}'**.\n\nAsk me about **common misinformation patterns**, **correction themes**, or specific claims.\n\n*Note: This data reflects dispute contexts, not general public sentiment.*",
-            "type": "text"
-        })
-        
     # Initialize Evidence Archive for Exports
     if "evidence_bundles" not in st.session_state:
         st.session_state.evidence_bundles = {}
-        
+
     # Initialize Evidence Inspector State
     if "selected_evidence" not in st.session_state:
         st.session_state.selected_evidence = set()
@@ -1895,8 +1924,12 @@ def run_chat_interface(keyword):
             canonical_str = f"{prompt}|{','.join(note_ids)}"
             query_id_hash = hashlib.sha256(canonical_str.encode()).hexdigest()
             
-            # Archive Evidence Bundle for Export
+            # Archive Evidence Bundle (Memory + Disk Persistence)
             st.session_state.evidence_bundles[query_id_hash] = context_payload
+            try:
+                cm.save_bundle(query_id_hash, context_payload)
+            except Exception as e:
+                print(f"[Dashboard] Error persisting bundle: {e}")
 
             # DEBUG: Log Retrieval Context
             print(f"[Dashboard] Query: '{keyword}'")
@@ -1949,6 +1982,26 @@ def run_chat_interface(keyword):
                     final_json["query_meta"] = query_meta_obj
                     render_forensic_message(final_json)
                     st.session_state.chat_messages.append({"role": "assistant", "content": final_json, "type": "evidence_json"})
+                    
+                    # PERSIST TURN (Atomic Save with Lazy Case Creation)
+                    try:
+                        # Lazy case creation: create case if in draft mode or no active case
+                        if st.session_state.get("draft_case_mode") or not st.session_state.get("active_case_id"):
+                            new_case_id = cm.create_case(f"Investigation {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}")
+                            st.session_state.active_case_id = new_case_id
+                            st.session_state.draft_case_mode = False  # Exit draft mode
+                            print(f"[Dashboard] LAZY CREATE: Case {new_case_id[:8]} created on first turn (was draft)", file=sys.stderr)
+                        else:
+                            print(f"[Dashboard] APPEND: Adding turn to existing case {st.session_state.active_case_id[:8]}", file=sys.stderr)
+                        
+                        turn_payload = {
+                            "user_query": prompt,
+                            "assistant_response": final_json,
+                            "query_meta": query_meta_obj
+                        }
+                        cm.save_turn(st.session_state.active_case_id, turn_payload)
+                    except Exception as e:
+                        st.error(f"Failed to save case history: {e}")
                 
             except Exception as e:
                 st.error(f"Analysis Failed: {e}")
@@ -2040,6 +2093,145 @@ def main():
     if 'webllm_context' not in st.session_state:
         st.session_state['webllm_context'] = "{}"
 
+    # --- CASE MANAGEMENT BAR (Main Content - Always Visible) ---
+    # Rendered in main area, NOT sidebar, to guarantee visibility
+    with st.container():
+        st.markdown("##### 🗂️ Active Investigation")
+        existing_cases = cm.list_cases()
+        
+        # Check if we're in draft mode (unsaved new investigation)
+        is_draft_mode = st.session_state.get("draft_case_mode", False)
+        
+        # Format Case Options with Metadata (Name • Turns • Time)
+        case_options = {}
+        
+        # Add draft option first if in draft mode
+        if is_draft_mode:
+            case_options["__draft__"] = "📝 New Investigation (draft)"
+        
+        # Add existing saved cases
+        if existing_cases:
+            for c in existing_cases:
+                updated_ts = pd.Timestamp(c['updated_at'])
+                now = pd.Timestamp.now()
+                time_str = updated_ts.strftime('%H:%M') if updated_ts.date() == now.date() else updated_ts.strftime('%Y-%m-%d')
+                turn_count = c.get('turn_count', 0)
+                label = f"{c['name']} ({turn_count} turns • {time_str})"
+                case_options[c['case_id']] = label
+        
+        # Layout: SelectBox (main) + New (+) Button
+        col_case, col_new = st.columns([0.9, 0.1])
+        
+        with col_case:
+            # Determine current selection index
+            current_index = 0
+            if is_draft_mode:
+                current_index = 0  # Draft is first option
+            elif "active_case_id" in st.session_state and existing_cases:
+                option_keys = list(case_options.keys())
+                for idx, key in enumerate(option_keys):
+                    if key == st.session_state.active_case_id:
+                        current_index = idx
+                        break
+            
+            # Only show selectbox if we have options
+            if case_options:
+                selected_case_id = st.selectbox(
+                    "Select Case",
+                    options=list(case_options.keys()),
+                    format_func=lambda x: case_options.get(x, x),
+                    index=current_index,
+                    key="main_case_selector",
+                    label_visibility="collapsed"
+                )
+            else:
+                selected_case_id = None
+                st.caption("No active investigation")
+
+        with col_new:
+            if st.button("➕", help="Create New Investigation", key="btn_new_case"):
+                # Enter draft mode (don't persist yet)
+                st.session_state.draft_case_mode = True
+                st.session_state.active_case_id = None  # Clear to indicate draft
+                st.session_state['active_keyword'] = None
+                st.session_state.chat_messages = []  # Clear chat for new investigation
+                st.rerun()
+
+        # Handle Empty State (no cases AND not in draft)
+        if not existing_cases and not is_draft_mode:
+            st.info("No active investigation. Click ➕ or search a topic to begin.")
+        
+        # Context Switch Trigger
+        if selected_case_id:
+            if selected_case_id == "__draft__":
+                # Staying in draft mode, ensure state is correct
+                if not is_draft_mode:
+                    st.session_state.draft_case_mode = True
+                    st.session_state.active_case_id = None
+                    st.rerun()
+            elif selected_case_id != st.session_state.get("active_case_id"):
+                # Switching to a saved case
+                st.session_state.active_case_id = selected_case_id
+                st.session_state.draft_case_mode = False  # Exit draft mode
+                st.rerun()
+
+        st.divider()  # Visual separator before search
+
+
+
+
+    # Auto-select most recent case on startup (if not in draft and no active case)
+    if "active_case_id" not in st.session_state and existing_cases and not is_draft_mode:
+         st.session_state.active_case_id = existing_cases[0]['case_id']
+
+    # --- DERIVED STATE: Rebuild Chat View from Case Data ---
+    # This pattern ensures the UI always reflects the persisted case,
+    # avoiding session state "wipe hacks" that cause data loss.
+    def _build_chat_messages_from_case(case_id):
+        """Compute chat messages from case data (derived state)."""
+        messages = []
+        if not case_id:
+            return messages
+        
+        case_data = cm.load_case(case_id)
+        if not case_data:
+            return messages
+        
+        # Initial Greeting
+        topic_str = st.session_state.get('active_keyword') or case_data.get("name") or "this investigation"
+        messages.append({
+            "role": "assistant",
+            "content": f"**Forensic Link Active.**\n\nI have access to the Community Notes (corrections) dataset for **'{topic_str}'**.\n\nAsk me about **common misinformation patterns**, common correction themes, or specific claims.\n\n*Note: This data reflects dispute contexts, not general public sentiment.*",
+            "type": "text"
+        })
+        
+        # Rehydrate from Turns
+        for turn in case_data.get("turns", []):
+            messages.append({
+                "role": "user", 
+                "content": turn.get("user_query"), 
+                "type": "text"
+            })
+            messages.append({
+                "role": "assistant", 
+                "content": turn.get("assistant_response"), 
+                "type": "evidence_json"
+            })
+        
+        return messages
+    
+    # Always rebuild from source of truth (disk)
+    st.session_state.chat_messages = _build_chat_messages_from_case(
+        st.session_state.get("active_case_id")
+    )
+    
+    # ACTIVATION BRIDGE: If case has history, bypass search wall
+    if st.session_state.chat_messages and not st.session_state.get('active_keyword'):
+        if len(st.session_state.chat_messages) > 1:  # More than just greeting
+            st.session_state['active_keyword'] = "Resume Investigation"
+            st.rerun()  # Trigger immediate render of chat interface
+
+
     # Main Input (Search)
     with st.form(key='search_form'):
         col1, col2 = st.columns([4, 1])
@@ -2050,12 +2242,17 @@ def main():
             submit_button = st.form_submit_button(label="Generate Report", type="primary", use_container_width=True)
 
     # 1. Handle Form Submission
-    if submit_button and keyword_input:
-        st.session_state['active_keyword'] = keyword_input
-        # Reset context on new search to avoid stale data
-        st.session_state['webllm_context'] = "{}" 
-        st.session_state['chat_messages'] = []  # Reset chat history
-        st.rerun()
+    if submit_button:
+        if keyword_input:
+            st.session_state['active_keyword'] = keyword_input
+            # Reset context on new search to avoid stale data (but keep chat history)
+            st.session_state['webllm_context'] = "{}" 
+            # UX: Data Continuity - Do NOT wipe history. Append new query result to existing case.
+            # st.session_state['chat_messages'] = [] 
+            st.rerun()
+        else:
+            st.warning("⚠️ Please enter a topic to begin the analysis.")
+
 
     # 2. Render Main Dashboard (Persistent)
     if st.session_state['active_keyword']:
