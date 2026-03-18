@@ -3,8 +3,6 @@
 Local-first analytics and investigation tooling built on the public Community Notes dataset.
 It helps answer: **what spiked, who drove it, and what narratives emerged**, with optional AI assistance.
 
-**Demo video:** *https://youtu.be/piiLeL1NTzQ*
-**Screenshots / GIF:** **
 **Status:**active development, iterating on performance and UX
 
 ---
@@ -56,7 +54,6 @@ Examples of questions it can help answer:
     *   *Local:* WebGPU with WebLLM for on-device assistant behavior
     *   *Cloud:* Investigator mode via API key (only when explicitly enabled)
 
-*Add a simple diagram at `docs/architecture.png` and link it here.*
 
 ---
 
