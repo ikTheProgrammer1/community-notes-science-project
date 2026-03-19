@@ -167,8 +167,3 @@ run.sh                  # convenience runner
 ```
 
 ---
-## Contact
-
-**Nicolas Matta**
-*   Email: nico.matta1221@yahoo.com
-*   X: https://x.com/ikTheProgramner
